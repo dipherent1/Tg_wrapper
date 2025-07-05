@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+.venv/
+.tgwrap/
+
+# Sensitive Files
+sessions/
+logs/
+*.session
+*.session-journal
