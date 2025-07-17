@@ -1,0 +1,9 @@
+[project]
+name = "info-stream"
+version = "0.1.0"
+description = "A Telegram monitoring bot and API service."
+authors = [{name = "Binyam Mulat", email = "binyammulat244@gmail.com"}]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["app"]

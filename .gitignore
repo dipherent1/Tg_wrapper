@@ -214,3 +214,6 @@ sessions/
 logs/
 *.session
 *.session-journal
+
+alembic.ini
+alembic/versions/

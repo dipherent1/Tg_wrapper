@@ -1,11 +1,14 @@
 # app/main.py
 
+import sys
+import os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from .config import USER_SETTINGS
+from .config.config import USER_SETTINGS
 from .core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
 from .core.event_handler import setup_event_handlers
 from .routers import onboarding
+# sys.path.append(os.path.dirname(__file__))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,11 +20,11 @@ async def lifespan(app: FastAPI):
         
         # Connect and set up handlers
         await client.start()
-        if not await client.is_user_authorized():
-            print(f"[WARNING] Client for '{session_name}' is not authorized. Skipping.")
-            continue
+        # if not await client.is_user_authorized():
+        #     print(f"[WARNING] Client for '{session_name}' is not authorized. Skipping.")
+        #     continue
         
-        setup_event_handlers(client, user_config)
+        setup_event_handlers(client)
         ACTIVE_CLIENTS[session_name] = client
         print(f"[SUCCESS] Client for '{session_name}' is running in the background.")
     

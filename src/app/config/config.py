@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     API_ID: int
     API_HASH: str
     DEFAULT_SESSION_NAME: str = "default_session"
-
+    BOT_TOKEN: str = ""  
+    DB_URL: str = ""
     # Directories
     SESSIONS_DIR: str = "sessions/"
     LOGS_DIR: str = "logs/"
@@ -22,10 +23,10 @@ settings = Settings()
 # In a real app, this user data would come from a database.
 # For now, we'll keep it here for simplicity.
 USER_SETTINGS = {
-    'Abel A': {
-        'keywords': ['urgent', 'invoice', 'project alpha'],
-        'notification_method': 'log',
-    },
+    # 'Abel A': {
+    #     'keywords': ['urgent', 'invoice', 'project alpha'],
+    #     'notification_method': 'log',
+    # },
     'bini': {
         'keywords': ['meeting', 'deadline', 'project beta'],
         'notification_method': 'email',

@@ -8,14 +8,15 @@ def send_notification(user_config: dict, message_details: str):
     print(f"  [!] NOTIFICATION: {message_details}")
     # Here you'd implement actual notification logic (email, webhook, etc.)
 
-def setup_event_handlers(client: "TelegramClient", user_config: dict):
+def setup_event_handlers(client: "TelegramClient"):
     """Attaches event handlers to a client instance."""
-    
+    pass
     @client.on(events.NewMessage(incoming=True))
     async def new_message_handler(event):
         message_text = event.raw_text
-        for keyword in user_config.get('keywords', []):
-            if re.search(keyword, message_text, re.IGNORECASE):
-                # We found a match, send a notification
-                send_notification(user_config, f"Keyword '{keyword}' found in message.")
-                break # No need to check other keywords
+        print(f"New message received: {message_text}")
+        # for keyword in user_config.get('keywords', []):
+        #     if re.search(keyword, message_text, re.IGNORECASE):
+        #         # We found a match, send a notification
+        #         send_notification(user_config, f"Keyword '{keyword}' found in message.")
+        #         break # No need to check other keywords
