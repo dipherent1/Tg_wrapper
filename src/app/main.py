@@ -1,7 +1,6 @@
 # src/app/main.py
 
-import sys
-import os
+import logging
 import asyncio # <-- Add this import
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
@@ -11,37 +10,40 @@ from .core.background_tasks import process_join_queue_task
 from .core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
 from .core.event_handler import setup_event_handlers
 from .routers import onboarding
+# This setup will make our logs appear in the Uvicorn console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Code to run on startup ---
-    print("--- Starting background Telegram listeners... ---")
-    
+    logger.info("--- Starting background Telegram listeners... ---")
+
     # We will assume the first user in the config is the one that joins channels
     # This is a simplification for now.
     main_session_name = "bini"
     
     client = get_telethon_client(main_session_name)
-    print(f"Initializing main client for '{main_session_name}'...")
-    
+    logger.info(f"Initializing main client for '{main_session_name}'...")
+
     await client.start()
     
     setup_event_handlers(client)
     ACTIVE_CLIENTS[main_session_name] = client
-    print(f"[SUCCESS] Client for '{main_session_name}' is running.")
-    
+    logger.info(f"[SUCCESS] Client for '{main_session_name}' is running.")
+
     # --- START THE BACKGROUND TASK ---
-    print("--- Starting background join queue processor... ---")
+    logger.info("--- Starting background join queue processor... ---")
     asyncio.create_task(process_join_queue_task(client))
     
     yield # The application runs here
 
     # --- Code to run on shutdown ---
-    print("--- Shutting down Telegram clients... ---")
+    logger.info("--- Shutting down Telegram clients... ---")
     for session_name, client in ACTIVE_CLIENTS.items():
         if client.is_connected():
             await client.disconnect()
-            print(f"Client for '{session_name}' disconnected.")
+            logger.info(f"Client for '{session_name}' disconnected.")
 
 
 # Create the FastAPI app with the lifespan manager
