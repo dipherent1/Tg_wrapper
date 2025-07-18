@@ -1,65 +1,67 @@
+# src/app/core/bot.py
+
 import logging
-
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-# --- Project-specific imports ---
-# We need to access our database session and user repository logic
-from app.config.config import Settings
-from app.config.db import SessionLocal
-from app.repo.user_repo import UserRepo
-from app.domain.schemas import UserCreate
+from app.config.config import settings
 
-BOT_TOKEN = Settings().BOT_TOKEN
-if not BOT_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN not found in .env file!")
-
-# --- Bot Command Handlers ---
+JOIN_QUEUE_FILE = "join_queue.txt"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handles the /start command.
-    Greets the user and saves their info to the database.
-    """
-    telegram_user = update.message.from_user
-
-    # Data to be saved, conforming to our Pydantic schema
-    user_data = UserCreate(
-        telegram_user_id=telegram_user.id,
-        first_name=telegram_user.first_name,
-        username=telegram_user.username
-    )
-
-    # --- Database Interaction ---
-    # BEST PRACTICE: Manage session scope carefully in standalone scripts
-    # db = SessionLocal()
-    # try:
-    #     repo = UserRepo(db)
-    #     db_user = repo.get_or_create_user(user_data)
-    # finally:
-    #     db.close()
-
-    # Send a welcome message
+    # ... (start function is the same) ...
+    telegram_user = update.effective_user
     await update.message.reply_html(
         rf"Hi {telegram_user.mention_html()}! Welcome to Info-Stream."
-        "\n\nI will help you find the information you care about from Telegram channels."
-        "\n\nUse /subscribe to create a new alert."
+        "\n\nForward a message from a public channel you want me to monitor."
     )
 
+async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handles forwarded messages. If from a public channel, adds its username
+    to the queue file. If private, informs the user about the limitation.
+    """
+    origin = update.message.forward_origin
+    if not origin or origin.type != 'channel':
+        await update.message.reply_text("Please forward a message from a channel or a group.")
+        return
 
-# --- Main function to run the bot ---
+    # The Chat object contains the channel's details
+    channel_chat = origin.chat
+    
+    # --- THIS IS THE KEY LOGIC ---
+    if channel_chat.username:
+        # This is a public channel, we have a username!
+        channel_identifier = f"@{channel_chat.username}"
+        
+        try:
+            with open(JOIN_QUEUE_FILE, "a") as f:
+                f.write(f"{channel_identifier}\n")
+            
+            logging.info(f"[Bot] Added public channel '{channel_identifier}' to queue.")
+            await update.message.reply_text(
+                f"Thanks! Added public channel '{channel_chat.title}' to my queue. I'll join it shortly."
+            )
+        except Exception as e:
+            logging.error(f"[Bot] Error writing to queue file: {e}")
+            await update.message.reply_text("Sorry, an internal error occurred.")
+            
+    else:
+        # This is a private channel, it has no username.
+        logging.warning(f"[Bot] User tried to add private channel '{channel_chat.title}' (ID: {channel_chat.id}).")
+        await update.message.reply_text(
+            f"Sorry, I can't automatically join private channels like '{channel_chat.title}'. "
+            "I can only join public channels that have a username (e.g., @channel_name)."
+        )
+
 def main() -> None:
-    """Start the bot."""
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Register the /start command handler
+    # ... (main function is the same) ...
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    application = Application.builder().token(settings.BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-
-    # Add other handlers here later (e.g., for /subscribe)
-
-    # Start the Bot
+    application.add_handler(MessageHandler(filters.FORWARDED, handle_forwarded_message))
+    logging.info("[Bot] Starting polling...")
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()
