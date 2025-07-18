@@ -4,13 +4,17 @@ import asyncio
 import logging
 import os
 from telethon import TelegramClient
-# No need for JoinChannelRequest anymore, we use a higher-level method
-from telethon.errors.rpcerrorlist import UserAlreadyParticipantError, FloodWaitError
 from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest
+from telethon.errors.rpcerrorlist import UserAlreadyParticipantError, FloodWaitError
+
 JOIN_QUEUE_FILE = "join_queue.txt"
 
 async def process_join_queue_task(client: TelegramClient):
-    """A background task that joins channels based on usernames from a queue file."""
+    """
+    A background task that joins channels based on usernames or invite links
+    from a queue file.
+    """
     logging.info(f"[Listener] Started join queue processor for session: {client.session.filename}")
     while True:
         try:
@@ -26,33 +30,50 @@ async def process_join_queue_task(client: TelegramClient):
                 f.truncate()
 
             for line in lines:
-                identifier = line.strip()
-                # We only expect usernames now, which should start with @
-                if not identifier.startswith('@'):
-                    logging.warning(f"[Listener] Skipping invalid identifier in queue: {identifier}")
+                parts = line.strip().split(',')
+                identifier = parts[0]
+                
+                if not identifier:
                     continue
 
-                # --- THE CORRECT AND RELIABLE METHOD ---
                 try:
                     logging.info(f"[Listener] Processing join request for identifier '{identifier}'...")
                     
-                    # client.join_channel() is the high-level, correct way to do this.
-                    # It handles finding the entity and joining in one step.
-                    joined_channel = await client(JoinChannelRequest(identifier))
+                    if 't.me/+' in identifier or 'telegram.me/+' in identifier:
+                        # --- Case 1: Private invite link (t.me/+ABC...) ---
+                        invite_hash = identifier.split('/')[-1].replace('+', '')
+                        updates = await client(ImportChatInviteRequest(invite_hash))
+                        joined_entity = updates.chats[0]
+                        logging.info(f"✅ [SUCCESS] Joined private chat via invite link: '{joined_entity.title}'")
+                    
+                    else:
+                        # # --- Case 2: Public channel (@username or t.me/username) ---
+                        # # First, normalize the identifier to just the username
+                        # if identifier.startswith('@'):
+                        #     entity_name = identifier
+                        # elif 't.me/' in identifier:
+                        #     entity_name = identifier.split('/')[-1]
+                        # else:
+                        #     # If it's not a link or @name, assume it's a raw username
+                        #     entity_name = identifier
 
-                    # logging.info(f"✅ [SUCCESS] Joined channel: '{joined_channel.title}'")
-                    print(f"✅ [SUCCESS] Joined channel:{identifier}")
-                    logging.info(f"✅ [SUCCESS] Joined channel  ")
+                        # This is the correct 2-step process
+                        # 1. Get the full channel object
+                        # logging.info(f"[Listener] Resolving entity for '{identifier}'...")
+                        # entity = await client.get_entity(identifier)
+                        # logging.info(f"[Listener] Resolved entity: {entity.title} (ID: {entity.id})")
+                        # 2. Join using the entity object
+                        await client(JoinChannelRequest(identifier))
+                        logging.info(f"✅ [SUCCESS] Joined public channel: '{identifier}'")
 
                 except UserAlreadyParticipantError:
-                    print(f"ℹ️ [INFO] Already a participant in channel: {identifier}")
-                    logging.warning(f"ℹ️ [INFO] Already a participant in channel: {identifier}")
+                    logging.warning(f"ℹ️ [INFO] Already a participant in chat: {identifier}")
                 except FloodWaitError as e:
                     logging.error(f"❌ [ERROR] Flood wait error. Sleeping for {e.seconds} seconds.")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
-                    # This could be due to various reasons, e.g., channel doesn't exist.
-                    logging.error(f"❌ [ERROR] Failed to join channel {identifier}: {e}")
+                    # This will now correctly catch errors if the entity can't be found
+                    logging.error(f"❌ [ERROR] Failed to process identifier {identifier}: {e}")
 
         except Exception as e:
             logging.error(f"An unexpected error occurred in the processing loop: {e}")
