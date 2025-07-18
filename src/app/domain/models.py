@@ -1,43 +1,126 @@
-from sqlalchemy import Column, Integer, String, BigInteger, ForeignKey, Table, DateTime
-from sqlalchemy.orm import relationship
+# src/app/domain/models.py
+
+import uuid
+from sqlalchemy import (
+    Column, String, BigInteger, ForeignKey, Table, DateTime, Text, Boolean,
+    Enum as SQLAlchemyEnum
+)
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.config.db import Base
+import enum
 
-# Association Table for the many-to-many relationship between channels and tags
-channel_tags = Table('channel_tags', Base.metadata,
-    Column('channel_id', Integer, ForeignKey('channels.id'), primary_key=True),
-    Column('tag_id', Integer, ForeignKey('tags.id'), primary_key=True)
+# --- Enums for Status Fields ---
+# Using enums makes the status field much more robust and readable.
+class Status(enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DELETED = "deleted"
+
+
+# --- Association Table for Many-to-Many Relationships ---
+# We'll use the modern Mapped[] syntax for these too.
+channel_tags_table = Table(
+    'channel_tags',
+    Base.metadata,
+    Column('channel_id', UUID(as_uuid=True), ForeignKey('channels.id'), primary_key=True),
+    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id'), primary_key=True)
 )
+
+
+# --- Core Models ---
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String)
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
+    
+    status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user")
 
 class Channel(Base):
     __tablename__ = "channels"
 
-    id = Column(Integer, primary_key=True, index=True)
-    telegram_channel_id = Column(BigInteger, unique=True, nullable=False, index=True)
-    name = Column(String, nullable=False)
-    type = Column(String, nullable=True) # 'channel' or 'supergroup'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
     
-    # Many-to-Many relationship with Tag
-    tags = relationship("Tag", secondary=channel_tags, back_populates="channels")
+    # --- NEW: Add a username field ---
+    # This is crucial for generating public links. We'll populate it when we can.
+    username: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+
+    status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    messages: Mapped[list["Message"]] = relationship(back_populates="channel")
+    tags: Mapped[list["Tag"]] = relationship(secondary=channel_tags_table, back_populates="channels")
+
+    @property
+    def clickable_link(self) -> str | None:
+        """
+        Generates a clickable t.me link for the channel.
+        Returns a public link if the channel has a username, otherwise returns None.
+        """
+        if self.username:
+            return f"https://t.me/{self.username}"
+        return None
 
 class Tag(Base):
     __tablename__ = "tags"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    
+    # Relationships
+    channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
 
-    # Many-to-Many relationship with Channel
-    channels = relationship("Channel", secondary=channel_tags, back_populates="tags")
+class Subscription(Base):
+    __tablename__ = "subscriptions"
 
-# NEW: Add the User model
-class User(Base):
-    __tablename__ = "users"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
-    id = Column(Integer, primary_key=True, index=True)
-    telegram_user_id = Column(BigInteger, unique=True, nullable=False, index=True)
-    first_name = Column(String)
-    username = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="subscriptions")
 
-    # We will add a relationship to subscriptions later
-    # subscriptions = relationship("Subscription", back_populates="user")
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    channel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("channels.id"), nullable=False, index=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    channel: Mapped["Channel"] = relationship(back_populates="messages")
+    
+    @property
+    def clickable_link(self) -> str:
+        """Generates a clickable t.me link for the message."""
+        # Channels and supergroups have a prefix of -100 which needs to be removed.
+        # We access the channel's telegram_id via the relationship.
+        if self.channel and self.channel.telegram_id < -100:
+             # This handles the typical channel/supergroup ID format, e.g., -100123456789
+            simple_channel_id = abs(self.channel.telegram_id) - 1000000000000
+            return f"https://t.me/c/{simple_channel_id}/{self.telegram_message_id}"
+        elif self.channel: # For basic groups or other chat types
+            return f"https://t.me/c/{abs(self.channel.telegram_id)}/{self.telegram_message_id}"
+        return "#" # Fallback if channel relationship isn't loaded
