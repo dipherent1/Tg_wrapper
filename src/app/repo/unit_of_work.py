@@ -9,6 +9,7 @@ from .channel_repo import ChannelRepo
 from .tag_repo import TagRepo
 from .subscription_repo import SubscriptionRepo
 from .message_repo import MessageRepo
+from .join_request_repo import JoinRequestRepo
 
 class UnitOfWork:
     """
@@ -23,6 +24,7 @@ class UnitOfWork:
         self.tags = TagRepo(self.session)
         self.subscriptions = SubscriptionRepo(self.session)
         self.messages = MessageRepo(self.session)
+        self.join_requests = JoinRequestRepo(self.session)
 
     def __enter__(self):
         """Called when entering the 'with' statement."""

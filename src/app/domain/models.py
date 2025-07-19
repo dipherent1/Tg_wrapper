@@ -2,7 +2,7 @@
 
 import uuid
 from sqlalchemy import (
-    Column, String, BigInteger, ForeignKey, Table, DateTime, Text, Boolean,
+    Column, String, BigInteger, ForeignKey, Table, DateTime, Text, Boolean, ARRAY,
     Enum as SQLAlchemyEnum
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -41,10 +41,12 @@ class User(Base):
     
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="user")
+    join_requests: Mapped[list["ChannelJoinRequest"]] = relationship(back_populates="requested_by")
+
 
 class Channel(Base):
     __tablename__ = "channels"
@@ -59,7 +61,7 @@ class Channel(Base):
 
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     messages: Mapped[list["Message"]] = relationship(back_populates="channel")
@@ -93,7 +95,7 @@ class Subscription(Base):
     
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="subscriptions")
@@ -124,3 +126,21 @@ class Message(Base):
         elif self.channel: # For basic groups or other chat types
             return f"https://t.me/c/{abs(self.channel.telegram_id)}/{self.telegram_message_id}"
         return "#" # Fallback if channel relationship isn't loaded
+
+# In src/app/domain/models.py
+class JoinRequestStatus(enum.Enum):
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+class ChannelJoinRequest(Base):
+    __tablename__ = "channel_join_requests"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # This will store the @username, t.me link, or raw ID
+    identifier: Mapped[str] = mapped_column(String, index=True)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String)) # Store tags as an array of strings
+    requested_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[JoinRequestStatus] = mapped_column(SQLAlchemyEnum(JoinRequestStatus), default=JoinRequestStatus.PENDING)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    requested_by: Mapped["User"] = relationship(back_populates="join_requests")
