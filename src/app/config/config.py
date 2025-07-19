@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     API_ID: int
     API_HASH: str
     DEFAULT_SESSION_NAME: str = "default_session"
-    BOT_TOKEN: str = ""  
+    TELEGRAM_BOT_TOKEN: str = ""  
     DB_URL: str = ""
     # Directories
     SESSIONS_DIR: str = "sessions/"

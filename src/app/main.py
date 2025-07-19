@@ -1,48 +1,50 @@
-# app/main.py
+# src/app/main.py
 
-import sys
-import os
+import asyncio
+import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from .config.config import USER_SETTINGS
-from .core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
-from .core.event_handler import setup_event_handlers
-from .routers import onboarding
-# sys.path.append(os.path.dirname(__file__))
+
+from app.config.config import settings
+from app.core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
+from app.core.event_handler import setup_event_handlers
+from app.core.background_tasks import process_join_requests_task # <-- Renamed for clarity
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Code to run on startup ---
-    print("--- Starting background Telegram listeners... ---")
-    for session_name, user_config in USER_SETTINGS.items():
-        client = get_telethon_client(session_name)
-        print(f"Initializing client for '{session_name}'...")
-        
-        # Connect and set up handlers
-        await client.start()
-        # if not await client.is_user_authorized():
-        #     print(f"[WARNING] Client for '{session_name}' is not authorized. Skipping.")
-        #     continue
-        
-        setup_event_handlers(client)
-        ACTIVE_CLIENTS[session_name] = client
-        print(f"[SUCCESS] Client for '{session_name}' is running in the background.")
+    logger.info("--- Starting application lifespan ---")
     
-    yield # The application runs here
-
-    # --- Code to run on shutdown ---
-    print("--- Shutting down Telegram clients... ---")
-    for session_name, client in ACTIVE_CLIENTS.items():
-        if client.is_connected():
-            await client.disconnect()
-            print(f"Client for '{session_name}' disconnected.")
-
+    # We only need one client instance for both listening and joining
+    main_session_name = "bini"
+    client = get_telethon_client(main_session_name)
+    
+    logger.info(f"Connecting main client for '{main_session_name}'...")
+    await client.start()
+    
+    # 1. Setup the new message listener
+    setup_event_handlers(client)
+    
+    # 2. Start the background task for processing join requests
+    asyncio.create_task(process_join_requests_task(client))
+    
+    ACTIVE_CLIENTS[main_session_name] = client
+    logger.info(f"[SUCCESS] Client is running. Listening for messages and processing join requests.")
+    
+    yield
+    
+    logger.info("--- Shutting down application lifespan ---")
+    if client.is_connected():
+        await client.disconnect()
+        logger.info(f"Client for '{main_session_name}' disconnected.")
 
 # Create the FastAPI app with the lifespan manager
 app = FastAPI(lifespan=lifespan)
 
-# Include the onboarding router
-app.include_router(onboarding.router, prefix="/api", tags=["Onboarding"])
+# ... (rest of your main.py file is fine) ...
+# app.include_router(onboarding.router, prefix="/api", tags=["Onboarding"])
 
 @app.get("/")
 def read_root():

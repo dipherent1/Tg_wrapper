@@ -1,34 +1,29 @@
-from sqlalchemy.orm import Session
+# src/app/repo/user_repo.py
 
-from app.domain import models, schemas
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from ..domain import models, schemas
 
 class UserRepo:
+    def __init__(self, session: Session):
+        self.session = session
 
-    def __init__(self, db: Session):
-        self.db = db
-
-    def get_or_create_user(self, user_data: schemas.UserCreate) -> models.User:
-        """
-        Finds a user by their Telegram ID. If they don't exist, creates them.
-        This is the most common pattern for bots.
-        """
-        db_user = self.db.query(models.User).filter(
-            models.User.telegram_user_id == user_data.telegram_user_id
-        ).first()
-
-        if db_user:
-            # Optionally update fields like first_name or username if they change
-            # db_user.first_name = user_data.first_name
-            # self.db.commit()
-            return db_user
+    def get_user_by_telegram_id(self, telegram_id: int) -> models.User | None:
+        return self.session.execute(
+            select(models.User).where(models.User.telegram_id == telegram_id)
+        ).scalar_one_or_none()
+    
+    def get_or_create_user(self, schema: schemas.UserCreate) -> models.User:
+        """Finds a user by telegram_id or creates them."""
+        user = self.get_user_by_telegram_id(schema.telegram_id)
+        if user:
+            # If user was soft-deleted, reactivate them
+            if user.status == models.Status.DELETED:
+                user.status = models.Status.ACTIVE
+            user.full_name = schema.full_name # Update name
+            user.username = schema.username
+            return user
         
-        # User does not exist, so create a new one
-        db_user = models.User(
-            telegram_user_id=user_data.telegram_user_id,
-            first_name=user_data.first_name,
-            username=user_data.username
-        )
-        self.db.add(db_user)
-        self.db.commit()
-        self.db.refresh(db_user)
-        return db_user
+        new_user = models.User(**schema.model_dump())
+        self.session.add(new_user)
+        return new_user
