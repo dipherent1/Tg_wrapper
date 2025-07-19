@@ -1,44 +1,30 @@
 # src/app/core/event_handler.py
 
 import logging
+import asyncio
 from telethon import events, TelegramClient
-from telethon.tl.types import User, Channel, Chat
 
-# Get a logger for this module
+# Import our new worker function
+from .worker import process_new_message
+
 logger = logging.getLogger(__name__)
 
-async def new_message_handler(event: events.NewMessage.Event):
-    """
-    This function will be called for every new message in every chat
-    the client is in.
-    """
-    try:
-        # Get the chat entity to know its name and type
-        chat = event.chat
-        
-        # Determine the chat type and name
-        chat_title = ""
-        if isinstance(chat, User):
-            chat_title = chat.first_name
-        elif isinstance(chat, (Channel, Chat)):
-            chat_title = chat.title
-
-        # Log the message cleanly
-        logger.info(f"📬 New Message in '{chat_title}': '{event.raw_text[:80]}...'")
-        
-        # TODO: Here is where we will add the logic to:
-        # 1. Save the message to the database.
-        # 2. Check it against user subscriptions.
-        # 3. Send notifications.
-
-    except Exception as e:
-        logger.error(f"Error in new_message_handler: {e}", exc_info=True)
-
-
 def setup_event_handlers(client: TelegramClient):
-    """Attaches all the event handlers to the client instance."""
+    """
+    Attaches a simple event handler that triggers our worker function
+    for every new incoming message.
+    """
     
-    # Remove the `pass` and directly add the event handler function
-    client.add_event_handler(new_message_handler, events.NewMessage(incoming=True))
-    
-    logger.info("✅ Event handler for new messages has been set up.")
+    @client.on(events.NewMessage(incoming=True))
+    async def new_message_trigger(event: events.NewMessage.Event):
+        """
+        This function's only job is to 'trigger' the real processing logic.
+        We run it as a background task to prevent blocking the event loop.
+        """
+        logger.info(f"New message received in chat {event.chat_id}: {event.raw_text}")
+        
+        # This is a "fire-and-forget" approach. The listener can immediately
+        # go back to listening for the next message while this one is processed.
+        # asyncio.create_task(process_new_message(event))
+
+    logger.info("✅ Event handler trigger for new messages has been set up.")

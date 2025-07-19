@@ -32,6 +32,7 @@ def add_channel_with_tags(channel_schema: schemas.ChannelCreate, tag_names: list
         
         # The UnitOfWork will automatically commit the session when the 'with' block exits.
         # This saves the channel and the tags/links in a single atomic transaction.
+        uow.session.flush()
 
         # To return the full object with tags loaded, we can convert it to our Pydantic schema.
         # The ORM object might expire after the session closes, but the Pydantic model is a safe, static copy.

@@ -67,6 +67,8 @@ class Channel(Base):
     messages: Mapped[list["Message"]] = relationship(back_populates="channel")
     tags: Mapped[list["Tag"]] = relationship(secondary=channel_tags_table, back_populates="channels")
 
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
+
     @property
     def clickable_link(self) -> str | None:
         """
@@ -144,3 +146,5 @@ class ChannelJoinRequest(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     requested_by: Mapped["User"] = relationship(back_populates="join_requests")
+
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)

@@ -14,8 +14,6 @@ from telegram.ext import (
 from app.core.bot_utils import ensure_user # <-- Import our new decorator
 
 from app.config.config import settings
-from app.services.channel_service import add_channel_with_tags
-from app.domain import schemas
 from app.services.join_request_service import create_join_request
 
 # --- Setup ---

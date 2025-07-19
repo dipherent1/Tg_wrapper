@@ -5,7 +5,9 @@ import logging
 from telethon import TelegramClient
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
-from telethon.errors.rpcerrorlist import UserAlreadyParticipantError, FloodWaitError
+from telethon.tl.types import Channel
+from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
+
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from app.services.channel_service import add_channel_with_tags
@@ -20,67 +22,69 @@ async def process_join_requests_task(client: TelegramClient):
     logger.info("[Processor] Starting join request processor task...")
     while True:
         try:
-            pending_request = None
+            # --- THIS IS THE KEY CHANGE ---
+            # We will store the raw data, not the ORM object itself.
+            request_id = None
+            request_identifier = None
+            request_tags = None
+
+            # Use a UoW to safely fetch one pending job's data
             with UnitOfWork() as uow:
-                # Fetch one pending request to process
-                # You'd add a `get_one_pending` method to your JoinRequestRepo
                 pending_request = uow.join_requests.get_one_pending_request()
                 if pending_request:
-                    logger.info(f"Fetched pending request: {pending_request}")
-                    continue
-                    # Mark it as "processing" to prevent other workers from picking it up
-                    # This is an advanced step, for now we can assume one worker.
-                    pass 
+                    # Extract the data we need BEFORE the session closes
+                    request_id = pending_request.id
+                    request_identifier = pending_request.identifier
+                    request_tags = pending_request.tags
 
-            if not pending_request:
-                await asyncio.sleep(10) # Wait 10 seconds if no jobs
+            # If we didn't find a request, the variables will be None
+            if not request_id:
+                await asyncio.sleep(15) # Wait 15 seconds if no jobs
                 continue
 
-            logger.info(f"Processing join request for identifier: {pending_request.identifier}")
+            # Now we are using simple Python types (UUID, str, list), not detached ORM objects.
+            logger.info(f"Processing join request for identifier: {request_identifier}")
             
             try:
                 # --- Step 1: Use Telethon to join the channel ---
-                identifier = pending_request.identifier
-                
-                # ... (The robust joining logic from before) ...
-                if identifier.startswith('@') or 't.me/' in identifier and 't.me/+' not in identifier:
-                    entity_name = identifier.split('/')[-1]
-                    entity = await client.get_entity(entity_name)
-                    await client(JoinChannelRequest(entity))
-                elif 't.me/+' in identifier:
-                    invite_hash = identifier.split('/')[-1].replace('+', '')
+                entity_name = request_identifier
+                if 't.me/' in request_identifier and 't.me/+' not in request_identifier:
+                    entity_name = request_identifier.split('/')[-1]
+
+                if 't.me/+' in request_identifier:
+                    invite_hash = request_identifier.split('/')[-1].replace('+', '')
                     updates = await client(ImportChatInviteRequest(invite_hash))
                     entity = updates.chats[0]
-                else: # Assume it's a raw ID from a private forward
-                    entity = await client.get_entity(int(identifier))
-                    await client(JoinChannelRequest(entity))
+                else:
+                    entity = await client.get_entity(entity_name)
+                    if isinstance(entity, Channel):
+                        await client(JoinChannelRequest(entity))
+                
+                logger.info(f"Successfully joined/verified channel: '{entity.title}'")
 
-                logger.info(f"Successfully joined channel: '{entity.title}'")
-
-                # --- Step 2: Call the service to save the channel and its tags ---
+                # --- Step 2: Call the service to save the channel and tags ---
                 channel_data = schemas.ChannelCreate(
                     telegram_id=entity.id,
                     name=entity.title,
                     username=getattr(entity, 'username', None)
                 )
                 
-                # The service handles the "get or create tags" logic correctly
                 add_channel_with_tags(
                     channel_schema=channel_data,
-                    tag_names=pending_request.tags # Use the tags from the request
+                    tag_names=request_tags # Use the tags we safely extracted
                 )
                 
                 # --- Step 3: Update the request status to success ---
                 with UnitOfWork() as uow:
-                    uow.join_requests.update_request_status(pending_request.id, models.JoinRequestStatus.SUCCESS)
+                    # We now use the ID to update the request
+                    uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.SUCCESS)
 
             except Exception as e:
-                logger.error(f"Failed to process join request for {pending_request.identifier}: {e}")
-                # --- Step 3b: Update the request status to failed ---
+                logger.error(f"Failed to process join request for {request_identifier}: {e}", exc_info=True)
                 with UnitOfWork() as uow:
-                    uow.join_requests.update_request_status(pending_request.id, models.JoinRequestStatus.FAILED)
+                    # We use the ID here too
+                    uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.FAILED)
         
         except Exception as e:
-            # Catch errors in the main loop itself
-            logger.error(f"An unexpected error occurred in the processor task loop: {e}")
-            await asyncio.sleep(30) # Wait longer if there's a major loop error
+            logger.error(f"Critical error in processor task loop: {e}", exc_info=True)
+            await asyncio.sleep(60)
