@@ -7,27 +7,22 @@ from app.domain import models
 
 logger = logging.getLogger(__name__)
 
-def create_join_request(identifier: str, tags: list[str], user_id: uuid.UUID) -> models.ChannelJoinRequest:
+def create_join_request(identifier: str, tags: list[str], user_id: uuid.UUID) -> tuple[models.ChannelJoinRequest, bool]:
     """
     Service to create a channel join request.
-    This function is now clean and accepts the user_id directly.
+    Now directly returns the tuple from the repository.
     """
-    logger.info(f"Service: Creating join request for '{identifier}' for user_id {user_id} with tags: {tags}")
+    logger.info(f"Service: Processing join request for '{identifier}' with tags: {tags}")
     
     with UnitOfWork() as uow:
-        # The user is already guaranteed to exist by the @ensure_user decorator.
-        # We can directly use the user_id to create the request.
+        # The repo now handles all logic and returns the tuple.
+        join_req, was_newly_created = uow.join_requests.create_request(identifier, tags, user_id)
         
-        # We assume `uow.join_requests` exists from updating the UnitOfWork class.
-        join_req = uow.join_requests.create_request(
-            identifier=identifier,
-            tags=tags,
-            user_id=user_id
-        )
-        
-        # To be safe, we can load the request object before the session closes.
-        # This is optional but good practice if you need to return the created object.
-        uow.session.flush() # Flushes changes to the DB to get the object state
-        uow.session.refresh(join_req)
+        # If a request was created or found, we need to load its data before the session closes.
+        if join_req:
+            uow.session.flush()
+            # If you need to access relationships, you might need to refresh.
+            # For now, this is sufficient.
 
-    return join_req
+    return join_req, was_newly_created
+

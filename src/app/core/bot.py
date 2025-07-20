@@ -15,7 +15,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from app.core.bot_utils import ensure_user, escape_markdown_v2 # <-- Import our new decorator
+from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
 from app.services.user_service import get_or_create_user
 
 
@@ -55,36 +55,26 @@ async def add_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 # --- Conversation Step 2: Handle ALL channel input types ---
 async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Parses any valid user input (forward, link, username) and asks for tags."""
-    identifier = None
-    display_name = "the channel"
-
     message = update.message
-    
-    # Case 1: Forwarded message (most reliable)
+    user_input = ""
+
     if message.forward_origin and message.forward_origin.type == 'channel':
         origin_chat = message.forward_origin.chat
-        # If public, use username. If private, the listener will need the ID.
-        identifier = f"@{origin_chat.username}" if origin_chat.username else str(origin_chat.id)
-        display_name = f"'{origin_chat.title}'"
-    
-    # Case 2: Text input (link or username)
+        user_input = f"@{origin_chat.username}" if origin_chat.username else str(origin_chat.id)
     elif message.text:
-        text = message.text.strip()
-        if text.startswith('@') or 't.me/' in text:
-            identifier = text
-            display_name = text
-        else:
-            await message.reply_text("That doesn't look like a username or link or forwarded from a channel. Please try again.")
-            return ASK_CHANNEL
+        user_input = message.text
 
-    if not identifier:
-        await message.reply_text("I couldn't recognize that. Please forward a message, or send a username/link.")
+    # --- NORMALIZE THE INPUT ---
+    normalized_identifier = normalize_identifier(user_input)
+
+    if not normalized_identifier:
+        await message.reply_text("I couldn't recognize that format. Please send a valid username, link, or forward a message.")
         return ASK_CHANNEL
 
-    # We have a valid identifier! Store it and proceed to tag selection.
-    context.user_data['identifier'] = identifier
-    context.user_data['display_name'] = display_name
+    # Store the NORMALIZED identifier and proceed to tag selection
+    context.user_data['identifier'] = normalized_identifier
+
+    context.user_data['display_name'] = normalized_identifier
     context.user_data['selected_tags'] = set()
 
     # --- Create keyboard for tag selection (code is identical to before) ---
@@ -94,7 +84,7 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await message.reply_text(
-        f"Great, I've got {display_name}. Now, let's add some tags.",
+        f"Great, I've got {normalized_identifier}. Now, let's add some tags.",
         reply_markup=reply_markup
     )
     
@@ -108,7 +98,7 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     if query.data == "tags_done":
-        identifier = context.user_data['identifier']
+        normalized_identifier = context.user_data['identifier']
         display_name = context.user_data['display_name']
         selected_tags = list(context.user_data.get('selected_tags', set()))
         if not selected_tags:
@@ -122,17 +112,21 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                 raise ValueError("User could not be found or created.")
 
             # Call the service, which now only needs the ID
-            create_join_request(
-                identifier=identifier,
-                tags=selected_tags,
-                user_id=db_user_id # Pass the UUID directly
-            )
+            join_req, was_newly_created = create_join_request(
+            identifier=normalized_identifier,
+            tags=selected_tags,
+            user_id=db_user_id
+        )
+
             
-            final_tags_str = ', '.join(selected_tags)
-            await query.edit_message_text(
-                f"Request received! I've added {display_name} to my queue with tags: {final_tags_str}.\n"
-                "I will try to join it and will let you know if I succeed."
-            )
+            if was_newly_created:
+                await query.edit_message_text(
+                    f"Request received! I've added '{normalized_identifier}' to my queue."
+                )
+            else:
+                await query.edit_message_text(
+                    f"This channel ('{normalized_identifier}') is already in my queue or has been successfully added. No action was needed."
+                )
         except Exception as e:
             logger.error(f"Error creating join request from bot: {e}", exc_info=True)
             await query.edit_message_text("Sorry, an internal error occurred. Please try again later.")
