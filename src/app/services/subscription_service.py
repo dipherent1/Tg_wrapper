@@ -83,3 +83,39 @@ def cancel_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID) -> bool:
         # UoW will commit the status change upon exit.
     
     return True
+
+
+def edit_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID, new_query_text: str) -> bool:
+    """
+    Core business logic to edit a subscription's query text.
+    Ensures the user owns the subscription they are trying to edit.
+    
+    Returns:
+        True if the edit was successful, False otherwise.
+    """
+    logger.info(f"Service: Attempting to edit subscription {subscription_id} for user {user_id}")
+
+    if not new_query_text or len(new_query_text) < 3:
+        logger.warning("Edit failed: New query text is too short.")
+        return False
+
+    with UnitOfWork() as uow:
+        # Step 1: Fetch the subscription
+        subscription = uow.subscriptions.get_subscription_by_id(subscription_id)
+
+        # Step 2: Validate ownership and status
+        if not subscription:
+            logger.warning(f"Subscription {subscription_id} not found.")
+            return False
+        if subscription.user_id != user_id:
+            logger.error(f"SECURITY: User {user_id} tried to edit subscription owned by {subscription.user_id}.")
+            return False
+        if subscription.status != models.Status.ACTIVE:
+            logger.warning(f"Subscription {subscription_id} is not active, cannot edit.")
+            return False
+
+        # Step 3: Perform the update
+        uow.subscriptions.update_subscription_query(subscription, new_query_text)
+        # UoW will commit the changes upon exit.
+    
+    return True

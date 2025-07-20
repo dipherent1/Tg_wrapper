@@ -38,6 +38,7 @@ class SubscriptionRepo:
         """Changes a subscription's status to DELETED instead of removing it."""
         subscription.status = models.Status.DELETED
         # The change is added to the session, to be committed by the UoW.
+        
     def update_subscription_query(self, subscription: models.Subscription, new_query_text: str):
         """Updates the query_text of a given subscription object."""
         subscription.query_text = new_query_text

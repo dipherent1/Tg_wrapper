@@ -1,10 +1,11 @@
 # src/app/core/bot.py
 
 import logging
+from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
 import uuid
-from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription
+from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription, edit_subscription
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 # --- State definitions for our Conversation ---
 (ASK_CHANNEL, ASK_TAGS) = range(2)
 (ASK_QUERY,) = range(1) # We only need one state for this conversation
+(ASK_NEW_QUERY,) = range(10, 11)
 
 # --- List of available tags. Later this can come from the DB. ---
 # As requested, 'default' is included as a choice.
@@ -222,20 +224,76 @@ async def list_subscriptions(update: Update, context: ContextTypes.DEFAULT_TYPE)
         query_preview = (sub.query_text[:30] + '...') if len(sub.query_text) > 30 else sub.query_text
         # --- THIS IS THE FIX ---
         # Escape any special characters in the user-generated content
-        escaped_preview = escape_markdown_v2(query_preview)
+        # escaped_preview = escape_markdown_v2(query_preview)
         
         # Now, construct the line using the *escaped* text.
         # We also need to escape the '-' for the list item itself.
-        message_text += f"\n\\- `{escaped_preview}`"
+        # message_text += f"\n\\- `{escaped_preview}`"
         
         # The button text does not need escaping as it's not parsed.
         keyboard.append([
-            InlineKeyboardButton(f"❌ Cancel '{query_preview}'", callback_data=f"cancel_sub_{sub.id}")
+            InlineKeyboardButton(f"✏️ Edit '{query_preview}'", callback_data=f"edit_sub_{sub.id}"),
+            InlineKeyboardButton("❌ Cancel sub", callback_data=f"cancel_sub_{sub.id}")
         ])
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # reply_markup = InlineKeyboardMarkup(keyboard)
     # The message is now safe to send with MarkdownV2
-    await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+    await update.message.reply_text("Manage your subscriptions:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def edit_subscription_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the edit subscription conversation when an 'Edit' button is pressed."""
+    query = update.callback_query
+    await query.answer()
+
+    # Store the subscription ID we want to edit in the context
+    sub_id_str = query.data.replace("edit_sub_", "")
+    context.user_data['subscription_to_edit'] = sub_id_str
+
+    await query.edit_message_text(
+        text="Okay, please send me the new text for this alert.\n\nSend /cancel to stop editing."
+    )
+    return ASK_NEW_QUERY
+
+async def handle_new_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user's new query text and finalizes the edit."""
+    new_query_text = update.message.text
+    subscription_id_str = context.user_data.get('subscription_to_edit')
+
+    try:
+        subscription_id = uuid.UUID(subscription_id_str)
+        
+        # Get the user's DB ID
+        db_user = get_or_create_user(update.effective_user)
+        
+        # Call the edit service
+        success = edit_subscription(
+            user_id=db_user.id,
+            subscription_id=subscription_id,
+            new_query_text=new_query_text
+        )
+
+        if success:
+            await update.message.reply_text(f"✅ Subscription updated successfully to: '{new_query_text}'")
+        else:
+            await update.message.reply_text("Could not update subscription. The new text might be too short or an error occurred.")
+
+    except (ValueError, TypeError):
+        await update.message.reply_text("Error: Invalid subscription format.")
+    except Exception as e:
+        logger.error(f"Error handling new query input: {e}", exc_info=True)
+        await update.message.reply_text("An internal error occurred.")
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def edit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels the edit subscription conversation."""
+    await update.message.reply_text("Okay, edit cancelled.")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
 
 async def handle_cancel_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the 'Cancel' button press by calling the appropriate services."""
@@ -321,6 +379,19 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
 
     
+    edit_sub_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(edit_subscription_start, pattern="^edit_sub_")],
+        states={
+            ASK_NEW_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_query_input)],
+        },
+        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        # This allows the handler to be triggered by a button from another handler
+        map_to_parent={
+            ConversationHandler.END: -1 # Or another state if you want to go back to the list
+        }
+    )
+    application.add_handler(edit_sub_conv_handler)
+
     # Channel Conversation Handler
     add_channel_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("addchannel", add_channel_start)],
