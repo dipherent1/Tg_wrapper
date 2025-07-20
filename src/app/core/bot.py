@@ -2,6 +2,7 @@
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,6 +13,7 @@ from telegram.ext import (
     filters,
 )
 from app.core.bot_utils import ensure_user # <-- Import our new decorator
+from app.services.subscription_service import add_subscription_for_user
 
 from app.config.config import settings
 from app.services.join_request_service import create_join_request
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # --- State definitions for our Conversation ---
 (ASK_CHANNEL, ASK_TAGS) = range(2)
+(ASK_QUERY,) = range(1) # We only need one state for this conversation
 
 # --- List of available tags. Later this can come from the DB. ---
 # As requested, 'default' is included as a choice.
@@ -146,6 +149,50 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
         return ASK_TAGS
 
+
+@ensure_user # Use the decorator to make sure the user exists in our DB
+async def subscribe_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the /subscribe conversation."""
+    await update.message.reply_text(
+        "Let's create a new alert.\n\n"
+        "What text are you looking for? (e.g., 'remote python job', 'macbook under 50000 birr', etc.)\n\n"
+        "Send /cancel to stop."
+    )
+    return ASK_QUERY
+
+async def handle_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the user's query text and saves the subscription."""
+    query_text = update.message.text
+    if not query_text or len(query_text) < 3:
+        await update.message.reply_text("That query is too short. Please provide a more descriptive search term.")
+        return ASK_QUERY # Ask again
+
+    try:
+        # The @ensure_user decorator already put the user's DB ID in the context
+        db_user_id = context.user_data.get('db_user_id')
+        if not db_user_id:
+            raise ValueError("Could not find user in context. Please /start the bot again.")
+
+        # Call our clean, reusable service function
+        add_subscription_for_user(
+            user_id=db_user_id,
+            query_text=query_text
+        )
+
+        await update.message.reply_text(
+            f"✅ Subscription created! I will now notify you whenever I see messages containing: '{query_text}'"
+        )
+        return ConversationHandler.END # End the conversation successfully
+
+    except Exception as e:
+        logger.error(f"Error creating subscription: {e}", exc_info=True)
+        await update.message.reply_text("Sorry, an internal error occurred. Your subscription was not created.")
+        return ConversationHandler.END
+
+async def subscribe_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels the subscribe conversation."""
+    await update.message.reply_text("Okay, I've cancelled the subscription process.")
+    return ConversationHandler.END
 # --- Conversation Fallback: Cancel ---
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation, clearing any stored data."""
@@ -154,39 +201,61 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+# src/app/core/bot.py
+
+# ... (all your imports and handler functions are correct) ...
+
+
+# --- Main Bot Setup (Synchronous and Simple) ---
 def main() -> None:
-    """Sets up and runs the bot with the ConversationHandler."""
+    """Sets up and runs the bot with all handlers."""
+    
+    # 1. Create the Application object
     application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
+    # 2. Add all your handlers
+
+    # Subscription Conversation Handler
+    subscribe_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("subscribe", subscribe_start)],
+        states={
+            ASK_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_query_input)],
+        },
+        fallbacks=[CommandHandler("cancel", subscribe_cancel)],
+        # It's good practice to allow conversations to time out
+        conversation_timeout=600 # 10 minutes
+    )
+    application.add_handler(subscribe_conv_handler)
+    
+    # Channel Conversation Handler
+    add_channel_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("addchannel", add_channel_start)],
         states={
             ASK_CHANNEL: [MessageHandler(filters.TEXT | filters.FORWARDED, handle_channel_input)],
-            
-            # --- THIS IS THE CORRECTED PART ---
             ASK_TAGS: [
-                # Handler for the "Done" button.
                 CallbackQueryHandler(handle_tag_selection, pattern="^tags_done$"),
-                
-                # Handler for all the individual tag buttons.
                 CallbackQueryHandler(handle_tag_selection, pattern="^tag_")
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=600 # 10 minutes
     )
+    application.add_handler(add_channel_conv_handler)
 
-    application.add_handler(conv_handler)
-    
+    # Start Command
     @ensure_user
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Greets the user and ensures they are in the database."""
-        await update.message.reply_text("Welcome! I've registered you. Use /addchannel to get started.")
-    
+        await update.message.reply_text("Welcome! Use /addchannel or /subscribe.")
     application.add_handler(CommandHandler("start", start_cmd))
 
     logger.info("[Bot] Starting polling...")
+    
+    # 3. Run the bot until you press Ctrl-C
+    # This method is blocking and handles the asyncio loop internally for you.
+    # It takes care of initialization, running, and shutdown automatically.
     application.run_polling()
 
 
 if __name__ == "__main__":
+    # No asyncio.run() needed, just call the synchronous main function.
     main()

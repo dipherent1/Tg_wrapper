@@ -84,6 +84,7 @@ class Tag(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    #TODO add description field for tags
     
     # Relationships
     channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
