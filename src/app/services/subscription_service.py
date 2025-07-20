@@ -4,6 +4,7 @@ import logging
 import uuid
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -36,3 +37,49 @@ def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Sub
 
     # The UoW commits automatically upon exiting the 'with' block.
     return subscription_orm
+
+def get_user_subscriptions(user_id: uuid.UUID) -> list[schemas.Subscription]:
+    """Service to fetch all active subscriptions for a user, returning Pydantic models."""
+    logger.info(f"Service: Fetching subscriptions for user_id {user_id}")
+    
+    with UnitOfWork() as uow:
+        # Get the list of ORM objects
+        subs_orm = uow.subscriptions.get_active_subscriptions_for_user(user_id)
+        
+        # --- THE FIX ---
+        # Convert each ORM object into a Pydantic schema WHILE THE SESSION IS OPEN.
+        subs_dto = [schemas.Subscription.model_validate(sub) for sub in subs_orm]
+
+    # Return the list of safe, detached Pydantic objects.
+    return subs_dto
+
+def cancel_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID) -> bool:
+    """
+    Core business logic to cancel a subscription.
+    Ensures that the user owns the subscription they are trying to cancel.
+    
+    Returns:
+        True if cancellation was successful, False otherwise.
+    """
+    logger.info(f"Service: Attempting to cancel subscription {subscription_id} for user {user_id}")
+    with UnitOfWork() as uow:
+        # Step 1: Fetch the subscription by its ID
+        subscription = uow.subscriptions.get_subscription_by_id(subscription_id)
+
+        # Step 2: Validate ownership and status
+        if not subscription:
+            logger.warning(f"Subscription {subscription_id} not found.")
+            return False
+        if subscription.user_id != user_id:
+            logger.error(f"SECURITY: User {user_id} tried to cancel subscription {subscription_id} owned by {subscription.user_id}.")
+            return False
+        if subscription.status != models.Status.ACTIVE:
+            logger.warning(f"Subscription {subscription_id} is not active, cannot cancel.")
+            return False
+
+        # Step 3: Perform the soft delete
+        uow.subscriptions.soft_delete_subscription(subscription)
+        
+        # UoW will commit the status change upon exit.
+    
+    return True

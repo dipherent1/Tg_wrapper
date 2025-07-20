@@ -3,6 +3,8 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
+import uuid
+from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,8 +14,9 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from app.core.bot_utils import ensure_user # <-- Import our new decorator
-from app.services.subscription_service import add_subscription_for_user
+from app.core.bot_utils import ensure_user, escape_markdown_v2 # <-- Import our new decorator
+from app.services.user_service import get_or_create_user
+
 
 from app.config.config import settings
 from app.services.join_request_service import create_join_request
@@ -194,6 +197,93 @@ async def subscribe_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text("Okay, I've cancelled the subscription process.")
     return ConversationHandler.END
 # --- Conversation Fallback: Cancel ---
+
+
+@ensure_user
+async def list_subscriptions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Displays a list of the user's active subscriptions with cancel buttons."""
+    db_user_id = context.user_data.get('db_user_id')
+    if not db_user_id:
+        await update.message.reply_text("Could not find your profile. Please try /start first.")
+        return
+
+    # Call the service to get the subscriptions
+    subscriptions = get_user_subscriptions(user_id=db_user_id)
+
+    if not subscriptions:
+        await update.message.reply_text("You have no active subscriptions. Use /subscribe to create one.")
+        return
+
+    message_text = "Here are your active subscriptions:\n"
+    keyboard = []
+    for sub in subscriptions: # 'sub' is now a schemas.Subscription object
+        # The code below works without changes because the Pydantic model
+        # has the same .query_text and .id attributes.
+        query_preview = (sub.query_text[:30] + '...') if len(sub.query_text) > 30 else sub.query_text
+        # --- THIS IS THE FIX ---
+        # Escape any special characters in the user-generated content
+        escaped_preview = escape_markdown_v2(query_preview)
+        
+        # Now, construct the line using the *escaped* text.
+        # We also need to escape the '-' for the list item itself.
+        message_text += f"\n\\- `{escaped_preview}`"
+        
+        # The button text does not need escaping as it's not parsed.
+        keyboard.append([
+            InlineKeyboardButton(f"❌ Cancel '{query_preview}'", callback_data=f"cancel_sub_{sub.id}")
+        ])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    # The message is now safe to send with MarkdownV2
+    await update.message.reply_text(message_text, reply_markup=reply_markup, parse_mode='MarkdownV2')
+
+async def handle_cancel_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the 'Cancel' button press by calling the appropriate services."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        sub_id_str = query.data.replace("cancel_sub_", "")
+        subscription_id = uuid.UUID(sub_id_str)
+        
+        # --- THIS IS THE CORRECTED LOGIC ---
+        # 1. Call the user service to get the user's DB info
+        db_user = get_or_create_user(query.from_user)
+
+        # 2. Call the subscription service with the necessary IDs
+        success = cancel_subscription(
+            user_id=db_user.id, 
+            subscription_id=subscription_id
+        )
+
+        if success:
+            await query.edit_message_text("✅ Subscription successfully cancelled.")
+        else:
+            await query.edit_message_text("Could not cancel subscription. It may have already been removed.")
+
+    except (ValueError, TypeError):
+        await query.edit_message_text("Error: Invalid subscription format.")
+    except Exception as e:
+        logger.error(f"Error handling cancel button: {e}", exc_info=True)
+        await query.edit_message_text("An internal error occurred.")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Displays a helpful message with all available commands."""
+    
+    # Using HTML for better formatting (bold tags)
+    help_text = (
+        "<b>Welcome to Info-Stream!</b>\n\n"
+        "I am your personal search and alert engine for Telegram. "
+        "I monitor channels and notify you when messages match your interests.\n\n"
+        "<b>Available Commands:</b>\n\n"
+        "▶️  /start - Register with the bot.\n\n"
+        "➕  /addchannel - Start a conversation to add a new channel for monitoring. I'll ask you for the channel's link/username and some tags.\n\n"
+        "🔔  /subscribe - Create a new alert. I'll ask you what text you're looking for.\n\n"
+        "📋  /mysubscriptions - List all your active alerts with options to cancel them.\n\n"
+        "❓  /help - Show this help message."
+    )
+    
+    await update.message.reply_text(help_text, parse_mode='HTML')
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation, clearing any stored data."""
     await update.message.reply_text("Okay, I've cancelled the process.")
@@ -226,6 +316,10 @@ def main() -> None:
         conversation_timeout=600 # 10 minutes
     )
     application.add_handler(subscribe_conv_handler)
+    application.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
+    application.add_handler(CallbackQueryHandler(handle_cancel_button, pattern="^cancel_sub_"))
+    application.add_handler(CommandHandler("help", help_command))
+
     
     # Channel Conversation Handler
     add_channel_conv_handler = ConversationHandler(
