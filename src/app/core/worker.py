@@ -2,72 +2,62 @@
 
 import logging
 from telethon import events
-
-from app.repo.unit_of_work import UnitOfWork
+from telethon.tl.types import Channel as TelethonChannel, User as TelethonUser
 from app.domain import schemas
-from .notifier import send_telegram_notification
+
+from app.services.message_service import save_new_message
+from app.services.matching_service import run_matching_for_message
 
 logger = logging.getLogger(__name__)
 
 async def process_new_message(event: events.NewMessage.Event):
     """
-    This is the core "worker" function for processing a single new message.
-    It saves the message, runs the matching engine, and sends notifications.
+    The orchestrator function. It extracts all necessary data and
+    calls the appropriate services.
     """
     try:
-        message_text = event.raw_text
-        if not message_text:
+        if not event.raw_text:
             return
 
-        db_message = None
-        with UnitOfWork() as uow:
-            # Step 1: Save the message to our database.
-            message_data = schemas.MessageCreate(
-                telegram_message_id=event.message.id,
-                channel_telegram_id=event.chat_id,
-                content=message_text,
-                sent_at=event.message.date,
-            )
-            db_message = uow.messages.create_message(message_data)
-            
-            if not db_message:
-                logger.warning(f"Could not save message from channel {event.chat_id}, channel may not be in DB yet.")
-                return
-
-            # Step 2: Fetch all active subscriptions.
-            active_subscriptions = uow.subscriptions.get_all_active_subscriptions()
-
-        # --- Matching Engine (V1 - Keywords) ---
-        if not active_subscriptions:
-            return
-
-        logger.info(f"Matching message from '{db_message.channel.name}' against {len(active_subscriptions)} subscriptions.")
+        # --- THIS IS THE FIX ---
+        # Step 1: Extract all available information from the event object.
+        chat = await event.get_chat()
         
-        notified_users = set()
-        for sub in active_subscriptions:
-            if sub.user.telegram_id in notified_users:
-                continue
+        # We are only interested in channels and supergroups for now.
+        if not isinstance(chat, (TelethonChannel)):
+             logger.debug(f"Ignoring message from non-channel chat: {getattr(chat, 'title', chat.id)}")
+             return
+        
+        channel_name = getattr(chat, 'title', None)
+        channel_username = getattr(chat, 'username', None)
 
-            keywords = sub.query_text.lower().split()
-            message_lower = message_text.lower()
-            
-            if any(keyword in message_lower for keyword in keywords):
-                logger.info(f"MATCH FOUND! User: {sub.user.telegram_id}, Keyword: {sub.query_text}")
-                
-                # --- Step 3: Send Notification ---
-                notification_text = (
-                    f"🔥 <b>New Match Found!</b>\n\n"
-                    f"<b>Channel:</b> {db_message.channel.name}\n"
-                    f"<b>Subscription:</b> '{sub.query_text}'\n\n"
-                    f"<blockquote>{message_text[:500]}</blockquote>\n"
-                    f"<a href='{db_message.clickable_link}'>Go to Message</a>"
-                )
-                
-                await send_telegram_notification(
-                    user_telegram_id=sub.user.telegram_id,
-                    message=notification_text
-                )
-                notified_users.add(sub.user.telegram_id)
+        # Step 2: Create the Pydantic schemas with the enriched data.
+        channel_data = schemas.ChannelCreate(
+            telegram_id=event.chat_id,
+            name=channel_name,
+            username=channel_username
+        )
+
+        message_data = schemas.MessageCreate(
+            telegram_message_id=event.message.id,
+            # We no longer need to pass channel_telegram_id here, as it's in channel_data
+            content=event.raw_text,
+            sent_at=event.message.date,
+        )
+        
+        # Step 3: Call the service to save everything.
+        # `db_message` is a safe Pydantic schema object.
+        db_message = save_new_message(
+            message_schema=message_data,
+            channel_schema=channel_data # Pass the enriched channel data
+        )
+        
+        if not db_message:
+            logger.warning("Message was not saved, skipping matching.")
+            return
+
+        # Step 4: Call the dedicated matching service.
+        # await run_matching_for_message(db_message)
 
     except Exception as e:
-        logger.error(f"Error in process_new_message: {e}", exc_info=True)
+        logger.error(f"Error in process_new_message orchestrator: {e}", exc_info=True)

@@ -25,6 +25,6 @@ def setup_event_handlers(client: TelegramClient):
         
         # This is a "fire-and-forget" approach. The listener can immediately
         # go back to listening for the next message while this one is processed.
-        # asyncio.create_task(process_new_message(event))
+        asyncio.create_task(process_new_message(event))
 
     logger.info("✅ Event handler trigger for new messages has been set up.")

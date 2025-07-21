@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.config.db import Base
 import enum
+from typing import Optional
 
 # --- Enums for Status Fields ---
 # Using enums makes the status field much more robust and readable.
@@ -24,10 +25,21 @@ class Status(enum.Enum):
 channel_tags_table = Table(
     'channel_tags',
     Base.metadata,
-    Column('channel_id', UUID(as_uuid=True), ForeignKey('channels.id'), primary_key=True),
-    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id'), primary_key=True)
+    Column(
+        'channel_id', 
+        UUID(as_uuid=True), 
+        # Add ondelete="CASCADE" here
+        ForeignKey('channels.id', ondelete="CASCADE"), 
+        primary_key=True
+    ),
+    Column(
+        'tag_id', 
+        UUID(as_uuid=True), 
+        # And also add it here for completeness when deleting tags
+        ForeignKey('tags.id', ondelete="CASCADE"), 
+        primary_key=True
+    )
 )
-
 
 # --- Core Models ---
 
@@ -65,7 +77,11 @@ class Channel(Base):
 
     # Relationships
     messages: Mapped[list["Message"]] = relationship(back_populates="channel")
-    tags: Mapped[list["Tag"]] = relationship(secondary=channel_tags_table, back_populates="channels")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary=channel_tags_table, 
+        back_populates="channels"
+    )
+
 
     # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
 
@@ -87,7 +103,10 @@ class Tag(Base):
     #TODO add description field for tags
     
     # Relationships
-    channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
+    channels: Mapped[list["Channel"]] = relationship(
+            secondary=channel_tags_table, 
+            back_populates="tags"
+        )
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -108,27 +127,32 @@ class Message(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
-    channel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("channels.id"), nullable=False, index=True)
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL"), 
+        nullable=True, 
+        index=True
+    )
+    channel_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    
     sent_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    channel: Mapped["Channel"] = relationship(back_populates="messages")
+    channel: Mapped[Optional["Channel"]] = relationship(back_populates="messages")
     
     @property
     def clickable_link(self) -> str:
-        """Generates a clickable t.me link for the message."""
-        # Channels and supergroups have a prefix of -100 which needs to be removed.
-        # We access the channel's telegram_id via the relationship.
-        if self.channel and self.channel.telegram_id < -100:
-             # This handles the typical channel/supergroup ID format, e.g., -100123456789
-            simple_channel_id = abs(self.channel.telegram_id) - 1000000000000
+        """Generates a clickable t.me link for the message using the denormalized ID."""
+        # This now uses the permanent channel_telegram_id, so it works even if the channel is deleted.
+        if self.channel_telegram_id < -100:
+            simple_channel_id = abs(self.channel_telegram_id) - 1000000000000
             return f"https://t.me/c/{simple_channel_id}/{self.telegram_message_id}"
-        elif self.channel: # For basic groups or other chat types
-            return f"https://t.me/c/{abs(self.channel.telegram_id)}/{self.telegram_message_id}"
-        return "#" # Fallback if channel relationship isn't loaded
+        else:
+            return f"https://t.me/c/{abs(self.channel_telegram_id)}/{self.telegram_message_id}"
 
 # In src/app/domain/models.py
 class JoinRequestStatus(enum.Enum):
