@@ -2,11 +2,13 @@
 
 import logging
 from telethon import events
-from telethon.tl.types import Channel as TelethonChannel, User as TelethonUser
+from telethon.tl.types import Channel as TelethonChannel, Chat as TelethonChat
+
 from app.domain import schemas
 
 from app.services.message_service import save_new_message
 from app.services.matching_service import run_matching_for_message
+from app.domain.models import ChatType
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,7 @@ async def process_new_message(event: events.NewMessage.Event):
     calls the appropriate services.
     """
     try:
+        logger.info(f"Processing new message in chat {event.chat_id}: {event.raw_text}")
         if not event.raw_text:
             return
 
@@ -24,18 +27,27 @@ async def process_new_message(event: events.NewMessage.Event):
         chat = await event.get_chat()
         
         # We are only interested in channels and supergroups for now.
-        if not isinstance(chat, (TelethonChannel)):
-             logger.debug(f"Ignoring message from non-channel chat: {getattr(chat, 'title', chat.id)}")
+        if not isinstance(chat, (TelethonChannel, TelethonChat)):
              return
         
+        # --- NEW LOGIC: Determine the chat type ---
+        chat_type = None
+        if isinstance(chat, TelethonChannel):
+            if chat.megagroup:
+                chat_type = ChatType.SUPERGROUP
+            else:
+                chat_type = ChatType.CHANNEL
+        elif isinstance(chat, TelethonChat):
+            chat_type = ChatType.BASIC_GROUP
+
         channel_name = getattr(chat, 'title', None)
         channel_username = getattr(chat, 'username', None)
 
-        # Step 2: Create the Pydantic schemas with the enriched data.
         channel_data = schemas.ChannelCreate(
             telegram_id=event.chat_id,
             name=channel_name,
-            username=channel_username
+            username=channel_username,
+            type=chat_type # <-- Pass the type to the schema
         )
 
         message_data = schemas.MessageCreate(

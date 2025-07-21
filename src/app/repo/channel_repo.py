@@ -22,6 +22,7 @@ class ChannelRepo:
             # Optionally update name/username if it has changed
             channel.name = schema.name or channel.name
             channel.username = schema.username or channel.username
+            channel.type = schema.type or channel.type
             return channel
         
         new_channel = models.Channel(**schema.model_dump())

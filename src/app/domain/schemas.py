@@ -5,7 +5,7 @@ import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
-from .models import Status # Import our custom Status enum
+from .models import Status, ChatType # Import our custom Status enum
 
 # --- Base Schemas (for creation) ---
 
@@ -21,6 +21,7 @@ class ChannelCreate(BaseModel):
     telegram_id: int
     name: Optional[str] = None
     username: Optional[str] = None
+    type: Optional[ChatType] = None
 
 class SubscriptionCreate(BaseModel):
     user_id: uuid.UUID
@@ -51,6 +52,7 @@ class Channel(BaseModel):
     status: Status
     clickable_link: Optional[str] # From our @property
     tags: List[Tag] = []
+    type: Optional[ChatType] = None
 
 class User(BaseModel):
     model_config = ConfigDict(from_attributes=True)

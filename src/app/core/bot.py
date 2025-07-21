@@ -404,7 +404,7 @@ def main() -> None:
     # Start Command
     @ensure_user
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Welcome! Use /addchannel or /subscribe.")
+        await update.message.reply_text("Welcome! Use /help or more.")
     application.add_handler(CommandHandler("start", start_cmd))
 
     logger.info("[Bot] Starting polling...")

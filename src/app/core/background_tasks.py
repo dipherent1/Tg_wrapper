@@ -7,7 +7,7 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.tl.types import Channel
 from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
-
+from telethon.errors import FloodError
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from app.services.channel_service import add_channel_with_tags
@@ -48,11 +48,17 @@ async def process_join_requests_task(client: TelegramClient):
             try:
                 # --- Step 1: Use Telethon to join the channel ---
                 entity_name = request_identifier
-                if 't.me/' in request_identifier and 't.me/+' not in request_identifier:
-                    entity_name = request_identifier.split('/')[-1]
+                # if 't.me/' in request_identifier and 't.me/+' not in request_identifier:
+                #     entity_name = request_identifier.split('/')[-1]
 
-                if 't.me/+' in request_identifier:
-                    invite_hash = request_identifier.split('/')[-1].replace('+', '')
+                # if 't.me/+' in request_identifier :
+                #     invite_hash = request_identifier.split('/')[-1].replace('+', '')
+                #     updates = await client(ImportChatInviteRequest(invite_hash))
+                #     entity = updates.chats[0]
+                invite_hash = None
+                if "+" in request_identifier:
+                    # This is a private channel invite link
+                    invite_hash = request_identifier.replace('+', '')
                     updates = await client(ImportChatInviteRequest(invite_hash))
                     entity = updates.chats[0]
                 else:
@@ -66,7 +72,7 @@ async def process_join_requests_task(client: TelegramClient):
                 channel_data = schemas.ChannelCreate(
                     telegram_id=entity.id,
                     name=entity.title,
-                    username=getattr(entity, 'username', None)
+                    username=getattr(entity, 'username', None),
                 )
                 
                 add_channel_with_tags(
@@ -78,6 +84,17 @@ async def process_join_requests_task(client: TelegramClient):
                 with UnitOfWork() as uow:
                     # We now use the ID to update the request
                     uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.SUCCESS)
+
+            except UserAlreadyParticipantError:
+                logger.info(f"Already a participant in channel: {request_identifier}")
+                with UnitOfWork() as uow:
+                    # We use the ID here too
+                    uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.SUCCESS)
+            
+            except FloodError:
+                logger.warning(f"Flood error while processing {request_identifier}. Retrying after cooldown.")
+                await asyncio.sleep(60)
+
 
             except Exception as e:
                 logger.error(f"Failed to process join request for {request_identifier}: {e}", exc_info=True)

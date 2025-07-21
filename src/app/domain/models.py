@@ -19,6 +19,10 @@ class Status(enum.Enum):
     INACTIVE = "inactive"
     DELETED = "deleted"
 
+class ChatType(enum.Enum):
+    CHANNEL = "channel"
+    SUPERGROUP = "supergroup"
+    BASIC_GROUP = "basic_group"
 
 # --- Association Table for Many-to-Many Relationships ---
 # We'll use the modern Mapped[] syntax for these too.
@@ -70,7 +74,8 @@ class Channel(Base):
     # --- NEW: Add a username field ---
     # This is crucial for generating public links. We'll populate it when we can.
     username: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
-
+    type: Mapped[ChatType] = mapped_column(SQLAlchemyEnum(ChatType), nullable=True)
+    
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -83,7 +88,7 @@ class Channel(Base):
     )
 
 
-    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved)
 
     @property
     def clickable_link(self) -> str | None:
@@ -172,4 +177,4 @@ class ChannelJoinRequest(Base):
 
     requested_by: Mapped["User"] = relationship(back_populates="join_requests")
 
-    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved)

@@ -64,7 +64,7 @@ def normalize_identifier(text: str) -> str | None:
 
     # Handle private invite links
     if 't.me/+' in text or 'telegram.me/+' in text:
-        return text.split('/')[-1].replace('+', '')
+        return text.split('/')[-1]
 
     # Handle public links
     if 't.me/' in text:
