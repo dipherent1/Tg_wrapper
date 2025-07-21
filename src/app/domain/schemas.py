@@ -28,7 +28,6 @@ class SubscriptionCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     telegram_message_id: int
-    channel_telegram_id: Optional[int] = None # We use the channel's telegram_id to find it
     content: Optional[str] = None
     sent_at: datetime.datetime
 
