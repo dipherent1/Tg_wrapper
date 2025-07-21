@@ -44,9 +44,12 @@ async def add_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Starts the conversation to add a new channel."""
     # The decorator has already saved the user to the DB and their ID to context.
     await update.message.reply_text(
-        "Okay, let's add a new channel.\n\n"
-        "Please forward a message, or send a public link/username.\n\n"
-        "Send /cancel at any time to stop."
+        "Let's add a new channel for monitoring!\n\n"
+        "You can:\n"
+        "• Forward a message from the channel\n"
+        "• Send the channel's @username\n"
+        "• Paste an invite link\n\n"
+        "Type /cancel anytime to exit."
     )
     return ASK_CHANNEL
 
@@ -68,7 +71,7 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
     normalized_identifier = normalize_identifier(user_input)
 
     if not normalized_identifier:
-        await message.reply_text("I couldn't recognize that format. Please send a valid username, link, or forward a message.")
+        await message.reply_text("I couldn't recognize that format. Please send a valid username, link, or forward a message from a public channel/supergroups.")
         return ASK_CHANNEL
 
     # Store the NORMALIZED identifier and proceed to tag selection
@@ -83,8 +86,9 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard.append([InlineKeyboardButton("✅ Done", callback_data="tags_done")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    channel_identifier = normalized_identifier if normalized_identifier.startswith('@') else f"the channel"
     await message.reply_text(
-        f"Great, I've got {normalized_identifier}. Now, let's add some tags.",
+        f"Great, I've got {channel_identifier}. Now, let's add some tags.",
         reply_markup=reply_markup
     )
     
@@ -105,7 +109,6 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
             selected_tags.append("default")
 
         try:
-            # --- THE FIX ---
             # The user's DB ID was saved to the context by the @ensure_user decorator.
             db_user_id = context.user_data['db_user_id']
             if not db_user_id:

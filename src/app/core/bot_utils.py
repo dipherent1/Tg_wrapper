@@ -54,7 +54,7 @@ def normalize_identifier(text: str) -> str | None:
     - @username -> @username
     - https://t.me/username -> @username
     - t.me/username -> @username
-    - https://t.me/+AbcDeFg -> AbcDeFg (the invite hash)
+    - https://t.me/+AbcDeFg -> +AbcDeFg (the invite hash)
     - Returns None if the format is unrecognizable.
     """
     text = text.strip()

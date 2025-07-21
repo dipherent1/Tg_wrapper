@@ -11,6 +11,9 @@ from telethon.errors import FloodError
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from app.services.channel_service import add_channel_with_tags
+from telethon.tl.types import Channel as TelethonChannel, Chat as TelethonChat
+from app.domain.models import ChatType
+
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +71,28 @@ async def process_join_requests_task(client: TelegramClient):
                 
                 logger.info(f"Successfully joined/verified channel: '{entity.title}'")
 
+                final_telegram_id = entity.id
+                # For basic groups, Telethon's entity.id is positive. We MUST store the negative.
+                
+                if isinstance(entity, TelethonChannel):
+                    # This handles both Channels and Supergroups
+                    final_telegram_id = -(entity.id + 1_000_000_000_000)
+                    chat_type = ChatType.SUPERGROUP if entity.megagroup else ChatType.CHANNEL
+
+                elif isinstance(entity, TelethonChat):
+                    final_telegram_id = -entity.id
+                    chat_type = ChatType.BASIC_GROUP
+               
+
+                logger.info(f"Chat id {final_telegram_id} type determined: {chat_type}")
+
+
                 # --- Step 2: Call the service to save the channel and tags ---
                 channel_data = schemas.ChannelCreate(
-                    telegram_id=entity.id,
+                    telegram_id=final_telegram_id,
                     name=entity.title,
                     username=getattr(entity, 'username', None),
+                    type=chat_type  # Pass the chat type
                 )
                 
                 add_channel_with_tags(

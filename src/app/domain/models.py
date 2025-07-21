@@ -151,14 +151,23 @@ class Message(Base):
     
     @property
     def clickable_link(self) -> str:
-        """Generates a clickable t.me link for the message using the denormalized ID."""
-        # This now uses the permanent channel_telegram_id, so it works even if the channel is deleted.
-        if self.channel_telegram_id < -100:
-            simple_channel_id = abs(self.channel_telegram_id) - 1000000000000
+        """
+        Generates a clickable t.me link for the message.
+        Handles public and private channels/supergroups.
+        Returns a non-link placeholder for basic groups.
+        """
+        # A channel/supergroup ID is always less than -1000000000000
+        is_supergroup_or_channel = (self.channel_telegram_id < -1_000_000_000_000)
+
+        if is_supergroup_or_channel:
+            # For supergroups and channels, the link format is t.me/c/...
+            simple_channel_id = abs(self.channel_telegram_id) - 1_000_000_000_000
             return f"https://t.me/c/{simple_channel_id}/{self.telegram_message_id}"
         else:
+            # Basic groups do not have a standard, constructible public link to a specific message.
+            # We return a link to the chat itself, which is the best we can do.
+            # Note: This link might not work on all clients for private basic groups.
             return f"https://t.me/c/{abs(self.channel_telegram_id)}/{self.telegram_message_id}"
-
 # In src/app/domain/models.py
 class JoinRequestStatus(enum.Enum):
     PENDING = "pending"

@@ -59,17 +59,17 @@ async def process_new_message(event: events.NewMessage.Event):
         
         # Step 3: Call the service to save everything.
         # `db_message` is a safe Pydantic schema object.
-        db_message = save_new_message(
+        message_schema = save_new_message(
             message_schema=message_data,
             channel_schema=channel_data # Pass the enriched channel data
         )
-        
-        if not db_message:
+
+        if not message_schema:
             logger.warning("Message was not saved, skipping matching.")
             return
 
         # Step 4: Call the dedicated matching service.
-        # await run_matching_for_message(db_message)
+        await run_matching_for_message(message_schema, channel_data)
 
     except Exception as e:
         logger.error(f"Error in process_new_message orchestrator: {e}", exc_info=True)

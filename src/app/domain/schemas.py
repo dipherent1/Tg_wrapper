@@ -72,6 +72,8 @@ class Subscription(BaseModel):
     query_text: str
     status: Status
     created_at: datetime.datetime
+    updated_at: datetime.datetime
+    user: User
 
 class Message(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -81,3 +83,5 @@ class Message(BaseModel):
     content: Optional[str] = None
     sent_at: datetime.datetime
     clickable_link: str # From our @property
+
+    channel: Optional[Channel] = None
