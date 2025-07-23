@@ -19,7 +19,7 @@ from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identi
 from app.services.user_service import get_or_create_user
 
 
-from app.config.config import settings
+from app.config.config import settings, load_tags_from_config
 from app.services.join_request_service import create_join_request
 
 # --- Setup ---
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # --- List of available tags. Later this can come from the DB. ---
 # As requested, 'default' is included as a choice.
-AVAILABLE_TAGS = ["default", "News", "Crypto", "Jobs", "Deals", "Tech", "Resources"]
+AVAILABLE_TAGS = load_tags_from_config()
 
 
 
@@ -81,7 +81,11 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['selected_tags'] = set()
 
     # --- Create keyboard for tag selection (code is identical to before) ---
-    keyboard_buttons = [InlineKeyboardButton(tag, callback_data=f"tag_{tag}") for tag in AVAILABLE_TAGS]
+    keyboard_buttons = [
+        InlineKeyboardButton(tag['name'], callback_data=f"tag_{tag['slug']}")
+        for tag in AVAILABLE_TAGS
+    ]
+    
     keyboard = [keyboard_buttons[i:i + 3] for i in range(0, len(keyboard_buttons), 3)]
     keyboard.append([InlineKeyboardButton("✅ Done", callback_data="tags_done")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -98,37 +102,47 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
 # --- Conversation Step 3: Handle Tag Selection & Create Join Request ---
 # --- Conversation Step 3: Handle Tag Selection (NOW USES THE USER ID FROM CONTEXT) ---
 async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Processes button clicks for tag selection or finalizes the process."""
     query = update.callback_query
     await query.answer()
 
-    if query.data == "tags_done":
+    callback_data = query.data
+
+    if callback_data == "tags_done":
+        # --- Finalize the process ---
         normalized_identifier = context.user_data['identifier']
-        display_name = context.user_data['display_name']
+        # The selected_tags set now contains slugs, e.g., {'backend-dev', 'jobs-hiring'}
         selected_tags = list(context.user_data.get('selected_tags', set()))
+
+        # If no tags were selected, use the slug for the default tag.
+        # We find the default tag's data from our loaded config.
         if not selected_tags:
-            selected_tags.append("default")
-
+            default_tag_slug = "default" # Fallback to 'default'
+            selected_tags.append(default_tag_slug)
+        
         try:
-            # The user's DB ID was saved to the context by the @ensure_user decorator.
-            db_user_id = context.user_data['db_user_id']
-            if not db_user_id:
-                raise ValueError("User could not be found or created.")
-
-            # Call the service, which now only needs the ID
+            db_user = get_or_create_user(query.from_user)
+            
+            # Call the service, passing the list of clean slugs
             join_req, was_newly_created = create_join_request(
-            identifier=normalized_identifier,
-            tags=selected_tags,
-            user_id=db_user_id
-        )
+                identifier=normalized_identifier,
+                tags=selected_tags,
+                user_id=db_user.id
+            )
 
+            # For the final message, we need to convert slugs back to pretty names
+            final_tag_names = [
+                tag['name'] for tag in AVAILABLE_TAGS if tag['slug'] in selected_tags
+            ]
+            final_tags_str = ', '.join(final_tag_names)
             
             if was_newly_created:
                 await query.edit_message_text(
-                    f"Request received! I've added '{normalized_identifier}' to my queue."
+                    f"Request received! I've added '{normalized_identifier}' to my queue with tags: {final_tags_str}."
                 )
             else:
                 await query.edit_message_text(
-                    f"This channel ('{normalized_identifier}') is already in my queue or has been successfully added. No action was needed."
+                    f"This channel ('{normalized_identifier}') is already in the queue. No new request was created."
                 )
         except Exception as e:
             logger.error(f"Error creating join request from bot: {e}", exc_info=True)
@@ -137,19 +151,41 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.clear()
         return ConversationHandler.END
 
-    # ... The rest of the tag selection logic (toggling buttons) remains the same ...
-    elif query.data.startswith("tag_"):
-        tag = query.data.split("_", 1)[1]
-        selected_tags = context.user_data.get('selected_tags', set())
-        if tag in selected_tags: selected_tags.remove(tag)
-        else: selected_tags.add(tag)
+    # --- THIS IS THE CORRECTED LOGIC FOR HANDLING TAG CLICKS ---
+    elif callback_data.startswith("tag_"):
+        # 1. Get the SLUG from the callback data
+        tag_slug = callback_data.split("_", 1)[1]
         
-        keyboard_buttons = [InlineKeyboardButton(f"✅ {t}" if t in selected_tags else t, callback_data=f"tag_{t}") for t in AVAILABLE_TAGS]
+        # 2. Get the set of selected SLUGS from the context
+        selected_tags = context.user_data.get('selected_tags', set())
+
+        # 3. Toggle the SLUG in the set
+        if tag_slug in selected_tags:
+            selected_tags.remove(tag_slug)
+        else:
+            selected_tags.add(tag_slug)
+        
+        # 4. Redraw the keyboard, iterating over the list of tag DICTIONARIES
+        keyboard_buttons = []
+        for tag_data in AVAILABLE_TAGS:
+            slug = tag_data['slug']
+            name = tag_data['name']
+            # Check if the SLUG is in our selected set
+            text = f"✅ {name}" if slug in selected_tags else name
+            # The button text is the NAME, the callback data is the SLUG
+            keyboard_buttons.append(InlineKeyboardButton(text, callback_data=f"tag_{slug}"))
+            
+        # 5. Rebuild the keyboard layout
         keyboard = [keyboard_buttons[i:i + 3] for i in range(0, len(keyboard_buttons), 3)]
         keyboard.append([InlineKeyboardButton("✅ Done", callback_data="tags_done")])
         
-        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 6. Edit the message with the updated keyboard
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+        
         return ASK_TAGS
+
 
 
 @ensure_user # Use the decorator to make sure the user exists in our DB
