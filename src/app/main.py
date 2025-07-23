@@ -4,14 +4,40 @@ import asyncio
 import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-
+from logging.handlers import RotatingFileHandler # <-- Import for file logging
+import sentry_sdk # <-- Import Sentry
 from app.config.config import settings
 from app.core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
 from app.core.event_handler import setup_event_handlers
 from app.core.background_tasks import process_join_requests_task # <-- Renamed for clarity
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler = RotatingFileHandler('info_stream.log', maxBytes=5*1024*1024, backupCount=5)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Configure basic console logging and add the file handler
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(), # To see logs in the console
+        file_handler           # To save logs to a file
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry SDK if a DSN is provided
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        # Enable performance monitoring
+        traces_sample_rate=1.0,
+        # Enable profiling
+        profiles_sample_rate=1.0,
+        # Add the FastAPI integration
+    )
+    logger.info("Sentry monitoring is enabled.")
+else:
+    logger.warning("SENTRY_DSN not found. Sentry monitoring is disabled.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,4 +74,8 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 def read_root():
-    return {"status": "Telegram Notifier API is running", "active_clients": list(ACTIVE_CLIENTS.keys())}
+    return {"status": "Telegram Notifier API is running"}
+
+@app.get("/sentry-debug")
+async def trigger_error():
+    division_by_zero = 1 / 0

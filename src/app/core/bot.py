@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
 from app.services.user_service import get_or_create_user
-
+import sentry_sdk
 
 from app.config.config import settings, load_tags_from_config
 from app.services.join_request_service import create_join_request
@@ -25,6 +25,15 @@ from app.services.join_request_service import create_join_request
 # --- Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        traces_sample_rate=1.0
+    )
+    logging.info("Sentry monitoring is enabled for the bot.")
+else:
+    logging.warning("SENTRY_DSN not found. Sentry monitoring for the bot is disabled.")
 
 # --- State definitions for our Conversation ---
 (ASK_CHANNEL, ASK_TAGS) = range(2)

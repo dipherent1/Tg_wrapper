@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""  
     DB_URL: str = ""
     # Directories
+    SENTRY_DSN: str = ""
     SESSIONS_DIR: str = "sessions/"
     TAGS_FILE_PATH: Path = BASE_DIR / "config/tags.json"
 
