@@ -4,6 +4,7 @@ import logging
 from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
+from logging.handlers import RotatingFileHandler
 import uuid
 from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription, edit_subscription
 from telegram.ext import (
@@ -19,12 +20,31 @@ from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identi
 from app.services.user_service import get_or_create_user
 import sentry_sdk
 
-from app.config.config import settings, load_tags_from_config
+from app.config.config import settings, load_tags_from_config, setup_logging_directory, setup_sessions_directory
 from app.services.join_request_service import create_join_request
 
-# --- Setup ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+setup_logging_directory()  # Ensure logging directory exists
+setup_sessions_directory()  # Ensure sessions directory exists
+
+LOGS_DIR = settings.LOGS_DIR
+
+logger = logging.getLogger("Bot") # Give it a custom name
+logger.setLevel(logging.INFO)
+
+# Create a dedicated file handler for the bot
+
+log_file_path = LOGS_DIR / "bot.log"
+bot_file_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=5)
+bot_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Add the file handler to our bot logger
+logger.addHandler(bot_file_handler)
+
+# Also add a console handler to see logs in the terminal
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
+
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(
@@ -413,7 +433,7 @@ def main() -> None:
         },
         fallbacks=[CommandHandler("cancel", subscribe_cancel)],
         # It's good practice to allow conversations to time out
-        conversation_timeout=600 # 10 minutes
+        conversation_timeout=600, # 10 minutes
     )
     application.add_handler(subscribe_conv_handler)
     application.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
@@ -430,7 +450,8 @@ def main() -> None:
         # This allows the handler to be triggered by a button from another handler
         map_to_parent={
             ConversationHandler.END: -1 # Or another state if you want to go back to the list
-        }
+        },
+        conversation_timeout=600,# 10 minutes
     )
     application.add_handler(edit_sub_conv_handler)
 
@@ -445,7 +466,7 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=600 # 10 minutes
+        conversation_timeout=600,# 10 minutes
     )
     application.add_handler(add_channel_conv_handler)
 
@@ -456,7 +477,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_cmd))
 
     logger.info("[Bot] Starting polling...")
-    
+
     # 3. Run the bot until you press Ctrl-C
     # This method is blocking and handles the asyncio loop internally for you.
     # It takes care of initialization, running, and shutdown automatically.
