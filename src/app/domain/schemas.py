@@ -5,7 +5,7 @@ import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 
-from .models import Status # Import our custom Status enum
+from .models import Status, ChatType # Import our custom Status enum
 
 # --- Base Schemas (for creation) ---
 
@@ -21,6 +21,7 @@ class ChannelCreate(BaseModel):
     telegram_id: int
     name: Optional[str] = None
     username: Optional[str] = None
+    type: Optional[ChatType] = None
 
 class SubscriptionCreate(BaseModel):
     user_id: uuid.UUID
@@ -28,7 +29,6 @@ class SubscriptionCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     telegram_message_id: int
-    channel_telegram_id: int # We use the channel's telegram_id to find it
     content: Optional[str] = None
     sent_at: datetime.datetime
 
@@ -52,6 +52,7 @@ class Channel(BaseModel):
     status: Status
     clickable_link: Optional[str] # From our @property
     tags: List[Tag] = []
+    type: Optional[ChatType] = None
 
 class User(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -71,6 +72,8 @@ class Subscription(BaseModel):
     query_text: str
     status: Status
     created_at: datetime.datetime
+    updated_at: datetime.datetime
+    user: User
 
 class Message(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -80,3 +83,5 @@ class Message(BaseModel):
     content: Optional[str] = None
     sent_at: datetime.datetime
     clickable_link: str # From our @property
+
+    channel: Optional[Channel] = None

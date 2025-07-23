@@ -7,10 +7,13 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.tl.types import Channel
 from telethon.errors.rpcerrorlist import UserAlreadyParticipantError
-
+from telethon.errors import FloodError
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from app.services.channel_service import add_channel_with_tags
+from telethon.tl.types import Channel as TelethonChannel, Chat as TelethonChat
+from app.domain.models import ChatType
+
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +51,17 @@ async def process_join_requests_task(client: TelegramClient):
             try:
                 # --- Step 1: Use Telethon to join the channel ---
                 entity_name = request_identifier
-                if 't.me/' in request_identifier and 't.me/+' not in request_identifier:
-                    entity_name = request_identifier.split('/')[-1]
+                # if 't.me/' in request_identifier and 't.me/+' not in request_identifier:
+                #     entity_name = request_identifier.split('/')[-1]
 
-                if 't.me/+' in request_identifier:
-                    invite_hash = request_identifier.split('/')[-1].replace('+', '')
+                # if 't.me/+' in request_identifier :
+                #     invite_hash = request_identifier.split('/')[-1].replace('+', '')
+                #     updates = await client(ImportChatInviteRequest(invite_hash))
+                #     entity = updates.chats[0]
+                invite_hash = None
+                if "+" in request_identifier:
+                    # This is a private channel invite link
+                    invite_hash = request_identifier.replace('+', '')
                     updates = await client(ImportChatInviteRequest(invite_hash))
                     entity = updates.chats[0]
                 else:
@@ -62,11 +71,28 @@ async def process_join_requests_task(client: TelegramClient):
                 
                 logger.info(f"Successfully joined/verified channel: '{entity.title}'")
 
+                final_telegram_id = entity.id
+                # For basic groups, Telethon's entity.id is positive. We MUST store the negative.
+                
+                if isinstance(entity, TelethonChannel):
+                    # This handles both Channels and Supergroups
+                    final_telegram_id = -(entity.id + 1_000_000_000_000)
+                    chat_type = ChatType.SUPERGROUP if entity.megagroup else ChatType.CHANNEL
+
+                elif isinstance(entity, TelethonChat):
+                    final_telegram_id = -entity.id
+                    chat_type = ChatType.BASIC_GROUP
+               
+
+                logger.info(f"Chat id {final_telegram_id} type determined: {chat_type}")
+
+
                 # --- Step 2: Call the service to save the channel and tags ---
                 channel_data = schemas.ChannelCreate(
-                    telegram_id=entity.id,
+                    telegram_id=final_telegram_id,
                     name=entity.title,
-                    username=getattr(entity, 'username', None)
+                    username=getattr(entity, 'username', None),
+                    type=chat_type  # Pass the chat type
                 )
                 
                 add_channel_with_tags(
@@ -78,6 +104,17 @@ async def process_join_requests_task(client: TelegramClient):
                 with UnitOfWork() as uow:
                     # We now use the ID to update the request
                     uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.SUCCESS)
+
+            except UserAlreadyParticipantError:
+                logger.info(f"Already a participant in channel: {request_identifier}")
+                with UnitOfWork() as uow:
+                    # We use the ID here too
+                    uow.join_requests.update_request_status(request_id, models.JoinRequestStatus.SUCCESS)
+            
+            except FloodError:
+                logger.warning(f"Flood error while processing {request_identifier}. Retrying after cooldown.")
+                await asyncio.sleep(60)
+
 
             except Exception as e:
                 logger.error(f"Failed to process join request for {request_identifier}: {e}", exc_info=True)

@@ -3,6 +3,7 @@
 import logging
 from functools import wraps
 import re
+from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ContextTypes
 # --- NEW: Import the service ---
@@ -45,3 +46,35 @@ def escape_markdown_v2(text: str) -> str:
     escape_chars = r'\_*[]()~`>#+-=|{}.!'
     # We use re.sub() to find any character from the list and prepend it with a '\'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
+# --- NEW: Identifier Normalizer Function ---
+def normalize_identifier(text: str) -> str | None:
+    """
+    Takes raw user input and normalizes it to a canonical format.
+    - @username -> @username
+    - https://t.me/username -> @username
+    - t.me/username -> @username
+    - https://t.me/+AbcDeFg -> +AbcDeFg (the invite hash)
+    - Returns None if the format is unrecognizable.
+    """
+    text = text.strip()
+    if text.startswith('@'):
+        # Already in a good format, just ensure it's simple
+        return f"@{text.split('@')[-1]}"
+
+    # Handle private invite links
+    if 't.me/+' in text or 'telegram.me/+' in text:
+        return text.split('/')[-1]
+
+    # Handle public links
+    if 't.me/' in text:
+        try:
+            path = urlparse(text).path
+            # Get the last part of the path and remove slashes
+            username = path.strip('/')
+            if username:
+                return f"@{username}"
+        except Exception:
+            return None # Invalid URL format
+
+    return None # Return None if no pattern matches

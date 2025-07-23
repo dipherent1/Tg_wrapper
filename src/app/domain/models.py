@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.config.db import Base
 import enum
+from typing import Optional
 
 # --- Enums for Status Fields ---
 # Using enums makes the status field much more robust and readable.
@@ -18,16 +19,31 @@ class Status(enum.Enum):
     INACTIVE = "inactive"
     DELETED = "deleted"
 
+class ChatType(enum.Enum):
+    CHANNEL = "channel"
+    SUPERGROUP = "supergroup"
+    BASIC_GROUP = "basic_group"
 
 # --- Association Table for Many-to-Many Relationships ---
 # We'll use the modern Mapped[] syntax for these too.
 channel_tags_table = Table(
     'channel_tags',
     Base.metadata,
-    Column('channel_id', UUID(as_uuid=True), ForeignKey('channels.id'), primary_key=True),
-    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id'), primary_key=True)
+    Column(
+        'channel_id', 
+        UUID(as_uuid=True), 
+        # Add ondelete="CASCADE" here
+        ForeignKey('channels.id', ondelete="CASCADE"), 
+        primary_key=True
+    ),
+    Column(
+        'tag_id', 
+        UUID(as_uuid=True), 
+        # And also add it here for completeness when deleting tags
+        ForeignKey('tags.id', ondelete="CASCADE"), 
+        primary_key=True
+    )
 )
-
 
 # --- Core Models ---
 
@@ -58,16 +74,21 @@ class Channel(Base):
     # --- NEW: Add a username field ---
     # This is crucial for generating public links. We'll populate it when we can.
     username: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
-
+    type: Mapped[ChatType] = mapped_column(SQLAlchemyEnum(ChatType), nullable=True)
+    
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     messages: Mapped[list["Message"]] = relationship(back_populates="channel")
-    tags: Mapped[list["Tag"]] = relationship(secondary=channel_tags_table, back_populates="channels")
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary=channel_tags_table, 
+        back_populates="channels"
+    )
 
-    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
+
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved)
 
     @property
     def clickable_link(self) -> str | None:
@@ -87,7 +108,10 @@ class Tag(Base):
     #TODO add description field for tags
     
     # Relationships
-    channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
+    channels: Mapped[list["Channel"]] = relationship(
+            secondary=channel_tags_table, 
+            back_populates="tags"
+        )
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -108,28 +132,42 @@ class Message(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
-    channel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("channels.id"), nullable=False, index=True)
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("channels.id", ondelete="SET NULL"), 
+        nullable=True, 
+        index=True
+    )
+    channel_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    
     sent_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    channel: Mapped["Channel"] = relationship(back_populates="messages")
+    channel: Mapped[Optional["Channel"]] = relationship(back_populates="messages")
     
     @property
     def clickable_link(self) -> str:
-        """Generates a clickable t.me link for the message."""
-        # Channels and supergroups have a prefix of -100 which needs to be removed.
-        # We access the channel's telegram_id via the relationship.
-        if self.channel and self.channel.telegram_id < -100:
-             # This handles the typical channel/supergroup ID format, e.g., -100123456789
-            simple_channel_id = abs(self.channel.telegram_id) - 1000000000000
-            return f"https://t.me/c/{simple_channel_id}/{self.telegram_message_id}"
-        elif self.channel: # For basic groups or other chat types
-            return f"https://t.me/c/{abs(self.channel.telegram_id)}/{self.telegram_message_id}"
-        return "#" # Fallback if channel relationship isn't loaded
+        """
+        Generates a clickable t.me link for the message.
+        Handles public and private channels/supergroups.
+        Returns a non-link placeholder for basic groups.
+        """
+        # A channel/supergroup ID is always less than -1000000000000
+        is_supergroup_or_channel = (self.channel_telegram_id < -1_000_000_000_000)
 
+        if is_supergroup_or_channel:
+            # For supergroups and channels, the link format is t.me/c/...
+            simple_channel_id = abs(self.channel_telegram_id) - 1_000_000_000_000
+            return f"https://t.me/c/{simple_channel_id}/{self.telegram_message_id}"
+        else:
+            # Basic groups do not have a standard, constructible public link to a specific message.
+            # We return a link to the chat itself, which is the best we can do.
+            # Note: This link might not work on all clients for private basic groups.
+            return f"https://t.me/c/{abs(self.channel_telegram_id)}/{self.telegram_message_id}"
 # In src/app/domain/models.py
 class JoinRequestStatus(enum.Enum):
     PENDING = "pending"
@@ -148,4 +186,4 @@ class ChannelJoinRequest(Base):
 
     requested_by: Mapped["User"] = relationship(back_populates="join_requests")
 
-    # TODO: Consider adding fields for approval status and privacy (e.g., approved, is_private)
+    # TODO: Consider adding fields for approval status and privacy (e.g., approved)

@@ -1,0 +1,75 @@
+{
+  "tags": [
+    {
+      "slug": "backend-dev",
+      "name": "Backend Development",
+      "description": "Alerts for backend programming, APIs, databases, and server-side tech."
+    },
+    {
+      "slug": "frontend-dev",
+      "name": "Frontend Development",
+      "description": "Alerts for frontend frameworks (React, Vue), UI/UX design, and web development."
+    },
+    {
+      "slug": "ai-ml",
+      "name": "AI & Machine Learning",
+      "description": "Alerts for artificial intelligence, ML models, data science, and LLMs."
+    },
+    {
+      "slug": "crypto-web3",
+      "name": "Crypto & Web3",
+      "description": "Alerts for cryptocurrency, blockchain technology, DeFi, and NFTs."
+    },
+    {
+      "slug": "devops-cloud",
+      "name": "DevOps & Cloud",
+      "description": "Alerts for CI/CD, cloud platforms (AWS, Azure, GCP), and infrastructure."
+    },
+    {
+      "slug": "project-management",
+      "name": "Project Management",
+      "description": "Alerts for Agile, Scrum, product roadmaps, and team leadership."
+    },
+    {
+      "slug": "product-management",
+      "name": "Product Management",
+      "description": "Alerts for product strategy, user research, and feature development."
+    },
+    {
+      "slug": "marketing-growth",
+      "name": "Marketing & Growth",
+      "description": "Alerts for digital marketing, growth hacking, SEO, and content strategy."
+    },
+    {
+      "slug": "business-startups",
+      "name": "Business & Startups",
+      "description": "Alerts for entrepreneurship, venture capital, and business news."
+    },
+    {
+      "slug": "jobs-hiring",
+      "name": "Jobs & Hiring",
+      "description": "For job postings, career opportunities, and recruitment."
+    },
+    {
+      "slug": "news-updates",
+      "name": "News & Updates",
+      "description": "General tech news, product launches, and major announcements."
+    },
+    {
+      "slug": "deals-offers",
+      "name": "Deals & Offers",
+      "description": "Discounts on software, courses, and special offers."
+    },
+    {
+        "slug": "self-improvement",
+        "name": "Self Improvement",
+        "description": "Alerts for personal development, productivity, and life hacks."
+    },
+    {
+        "slug": "product",
+        "name": "Product",
+        "description": "Alerts for product launches, updates, and feature releases."
+    }
+
+  ]
+}

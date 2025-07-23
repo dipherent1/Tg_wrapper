@@ -8,19 +8,18 @@ class MessageRepo:
         self.session = session
         self.channel_repo = ChannelRepo(session)
 
-    def create_message(self, schema: schemas.MessageCreate) -> models.Message | None:
-        """Creates a message and links it to the correct channel."""
-        # Find the parent channel using its telegram_id
-        channel = self.channel_repo.get_channel_by_telegram_id(schema.channel_telegram_id)
-        if not channel:
-            # Or you could create the channel on the fly here
-            return None 
+    def create_message(self, message_schema: schemas.MessageCreate, channel_orm: models.Channel) -> models.Message:
+        if not channel_orm:
+            raise ValueError("A valid Channel ORM object must be provided to create a message.")
 
         new_message = models.Message(
-            telegram_message_id=schema.telegram_message_id,
-            channel_id=channel.id, # Link using the channel's UUID primary key
-            content=schema.content,
-            sent_at=schema.sent_at
+            telegram_message_id=message_schema.telegram_message_id,
+            content=message_schema.content,
+            sent_at=message_schema.sent_at,
+            channel_telegram_id=channel_orm.telegram_id,
+            channel=channel_orm
         )
         self.session.add(new_message)
         return new_message
+
+

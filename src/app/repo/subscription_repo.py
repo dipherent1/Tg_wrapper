@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update
 from ..domain import models, schemas
+from sqlalchemy.orm import selectinload # <-- Add this import
 
 class SubscriptionRepo:
     def __init__(self, session: Session):
@@ -15,8 +16,11 @@ class SubscriptionRepo:
         return new_sub
 
     def get_all_active_subscriptions(self) -> list[models.Subscription]:
+        """The core method for the matching engine. Eagerly loads the user relationship."""
         return self.session.execute(
-            select(models.Subscription).where(models.Subscription.status == models.Status.ACTIVE)
+            select(models.Subscription)
+            .where(models.Subscription.status == models.Status.ACTIVE)
+            .options(selectinload(models.Subscription.user)) # <-- The magic line
         ).scalars().all()
 
     # --- NEW FUNCTION ---
@@ -42,3 +46,4 @@ class SubscriptionRepo:
     def update_subscription_query(self, subscription: models.Subscription, new_query_text: str):
         """Updates the query_text of a given subscription object."""
         subscription.query_text = new_query_text
+        subscription.updated_at = models.func.now()  # Update the timestamp
