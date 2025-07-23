@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler # <-- Import for file logging
 import sentry_sdk # <-- Import Sentry
 from app.config.config import settings, setup_logging_directory, setup_sessions_directory
-from app.core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
-from app.core.event_handler import setup_event_handlers
-from app.core.background_tasks import process_join_requests_task # <-- Renamed for clarity
+from app.core.listener.telethon_client import get_telethon_client, ACTIVE_CLIENTS
+from app.core.listener.event_handler import setup_event_handlers
+from app.core.listener.background_tasks import process_join_requests_task # <-- Renamed for clarity
 
 setup_logging_directory()  # Ensure logging directory exists
 setup_sessions_directory()  # Ensure sessions directory exists

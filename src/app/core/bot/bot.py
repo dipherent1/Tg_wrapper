@@ -16,7 +16,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
+from app.core.bot.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
 from app.services.user_service import get_or_create_user
 import sentry_sdk
 

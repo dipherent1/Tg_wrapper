@@ -3,7 +3,7 @@
 import logging
 import os
 from telethon import TelegramClient
-from ..config.config import settings
+from app.config.config import settings
 
 logger = logging.getLogger(__name__)
 # A dictionary to hold all active client instances, keyed by session name.
