@@ -52,6 +52,15 @@ subscription_tags_table = Table(
     Column('subscription_id', UUID(as_uuid=True), ForeignKey('subscriptions.id', ondelete="CASCADE"), primary_key=True),
     Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id', ondelete="CASCADE"), primary_key=True)
 )
+
+message_tags_table = Table(
+    'message_tags',
+    Base.metadata,
+    Column('message_id', UUID(as_uuid=True), ForeignKey('messages.id', ondelete="CASCADE"), primary_key=True),
+    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id', ondelete="CASCADE"), primary_key=True)
+)
+
+
 # --- Core Models ---
 
 class User(Base):
@@ -115,11 +124,9 @@ class Tag(Base):
     #TODO add description field for tags
     
     # Relationships
-    channels: Mapped[list["Channel"]] = relationship(
-            secondary=channel_tags_table, 
-            back_populates="tags"
-        )
+    channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
     subscriptions: Mapped[list["Subscription"]] = relationship(secondary=subscription_tags_table, back_populates="tags")
+    messages: Mapped[list["Message"]] = relationship(secondary=message_tags_table, back_populates="tags")
 
 
 class Subscription(Base):
@@ -158,6 +165,8 @@ class Message(Base):
     
     # Relationships
     channel: Mapped[Optional["Channel"]] = relationship(back_populates="messages")
+    tags: Mapped[list["Tag"]] = relationship(secondary=message_tags_table, back_populates="messages")
+
     
     @property
     def clickable_link(self) -> str:

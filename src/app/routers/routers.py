@@ -2,11 +2,13 @@
 from fastapi import APIRouter
 from app.routers.api.subscription_router import subscription_router
 from app.routers.api.onboarding import router as onboarding_router
+from app.routers.api.message_router import message_router
 
 
 routers_list = [
     subscription_router,
     onboarding_router,
+    message_router
 ]
 
 routers = APIRouter(prefix="/api", tags=["API"])

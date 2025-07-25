@@ -131,12 +131,7 @@ def get_all_subscriptions_paginated(
     logger.info("Service: Fetching all paginated subscriptions.")
     with UnitOfWork() as uow:
         total, subs_orm = uow.subscriptions.get_paginated_subscriptions(
-            skip=filters.skip,
-            limit=filters.limit,
-            search=filters.search,
-            start_date=filters.start_date,
-            end_date=filters.end_date,
-            tags=filters.tags
+            filters=filters
         )
         subs_dto = [schemas.SubscriptionResponse.model_validate(s) for s in subs_orm]
     return total, subs_dto

@@ -1,5 +1,6 @@
 # src/app/domain/schemas.py
 
+from email import message
 import uuid
 import datetime
 from pydantic import BaseModel, ConfigDict, Field
@@ -93,16 +94,6 @@ class AddTagsRequest(BaseModel):
     tag_names: list[str] = Field(..., min_length=1)
 
 
-class Message(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    telegram_message_id: int
-    content: Optional[str] = None
-    sent_at: datetime.datetime
-    clickable_link: str # From our @property
-
-    channel: Optional[Channel] = None
 
 
 class SubscriptionFilterParams:
@@ -117,7 +108,8 @@ class SubscriptionFilterParams:
         search: str | None = Query(None, description="Fuzzy search on query text"),
         start_date: datetime.date | None = Query(None, description="Start date for filtering (YYYY-MM-DD)"),
         end_date: datetime.date | None = Query(None, description="End date for filtering (YYYY-MM-DD)"),
-        tags: list[str] | None = Query(None, description="Filter by tags (e.g., ?tags=tech&tags=jobs)")
+        tags: list[str] | None = Query(None, description="Filter by tags (e.g., ?tags=tech&tags=jobs)"),
+        subscription_id: uuid.UUID | None = Query(None, description="Filter by subscription ID")
     ):
         self.skip = skip
         self.limit = limit
@@ -125,3 +117,43 @@ class SubscriptionFilterParams:
         self.start_date = start_date
         self.end_date = end_date
         self.tags = tags
+        self.subscription_id = subscription_id
+
+class Message(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    telegram_message_id: int
+    content: Optional[str] = None
+    sent_at: datetime.datetime
+    clickable_link: str # From our @property
+
+    channel: Optional[Channel] = None
+
+
+
+class MessageResponse(Message): # Inherits from our existing Message schema
+    tags: list[Tag] = []
+    channel: Optional[Channel] = None # Ensure the channel info is included
+class MessageFilterParams:
+    def __init__(
+        self,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(25, ge=1, le=100),
+        search: str | None = Query(None, description="Fuzzy search on message content"),
+        start_date: datetime.date | None = Query(None),
+        end_date: datetime.date | None = Query(None),
+        tags: list[str] | None = Query(None, description="Filter by message tags"),
+        channel_id: uuid.UUID | None = Query(None, description="Filter by a specific channel's UUID"),
+        channel_telegram_id: int | None = Query(None, description="Filter by a specific channel's Telegram ID"),
+        message_id: uuid.UUID | None = Query(None, description="Filter by a specific message's UUID")
+    ):
+        self.skip = skip
+        self.limit = limit
+        self.search = search
+        self.start_date = start_date
+        self.end_date = end_date
+        self.tags = tags
+        self.channel_id = channel_id
+        self.channel_telegram_id = channel_telegram_id
+        self.message_id = message_id

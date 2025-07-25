@@ -51,12 +51,7 @@ class SubscriptionRepo:
 
     def get_paginated_subscriptions(
         self,
-        skip: int,
-        limit: int,
-        search: str | None = None,
-        start_date: datetime.date | None = None,
-        end_date: datetime.date | None = None,
-        tags: list[str] | None = None,
+        filters: schemas.SubscriptionFilterParams
     ) -> tuple[int, list[models.Subscription]]:
         """A powerful query method with filtering and pagination. Results are sorted from newest to oldest."""
         
@@ -66,21 +61,23 @@ class SubscriptionRepo:
             .order_by(models.Subscription.created_at.desc()) # Newest to oldest
         )
 
-        if search:
-            stmt = stmt.where(models.Subscription.query_text.ilike(f"%{search}%"))
-        if start_date:
-            stmt = stmt.where(models.Subscription.created_at >= start_date)
-        if end_date:
+        if filters.search:
+            stmt = stmt.where(models.Subscription.query_text.ilike(f"%{filters.search}%"))
+        if filters.start_date:
+            stmt = stmt.where(models.Subscription.created_at >= filters.start_date)
+        if filters.end_date:
             # Add one day to end_date to make it inclusive
-            stmt = stmt.where(models.Subscription.created_at < end_date + datetime.timedelta(days=1))
-        if tags:
-            stmt = stmt.join(models.Subscription.tags).where(models.Tag.name.in_(tags))
+            stmt = stmt.where(models.Subscription.created_at < filters.end_date + datetime.timedelta(days=1))
+        if filters.tags:
+            stmt = stmt.join(models.Subscription.tags).where(models.Tag.name.in_(filters.tags))
+        if filters.subscription_id:
+            stmt = stmt.where(models.Subscription.id == filters.subscription_id)
 
         # First, get the total count of items that match the filter
         total_count = self.session.scalar(select(func.count()).select_from(stmt.subquery()))
         
         # Then, apply pagination to the main query
-        paginated_stmt = stmt.offset(skip).limit(limit)
+        paginated_stmt = stmt.offset(filters.skip).limit(filters.limit)
         items = self.session.execute(paginated_stmt).scalars().all()
         
         return total_count, items
