@@ -73,6 +73,10 @@ class SubscriptionRepo:
             stmt = stmt.join(models.Subscription.tags).where(models.Tag.name.in_(filters.tags))
         if filters.subscription_id:
             stmt = stmt.where(models.Subscription.id == filters.subscription_id)
+        if filters.user_id:
+            stmt = stmt.where(models.Subscription.user_id == filters.user_id)
+        if filters.status:
+            stmt = stmt.where(models.Subscription.status == filters.status)
 
         # First, get the total count of items that match the filter
         total_count = self.session.scalar(select(func.count()).select_from(stmt.subquery()))

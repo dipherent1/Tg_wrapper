@@ -64,7 +64,7 @@ else:
 # --- List of available tags. Later this can come from the DB. ---
 # As requested, 'others' is included as a choice.
 AVAILABLE_TAGS = get_all_tags()
-logger.info(f"Loaded {AVAILABLE_TAGS} available tags from the service.")
+# logger.info(f"Loaded {AVAILABLE_TAGS} available tags from the service.")
 
 
 
