@@ -1,13 +1,26 @@
 # src/app/domain/schemas.py
 
+from email import message
+from os import name
 import uuid
 import datetime
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional, TypeVar, Generic
+from fastapi import Query
+from fastapi import Depends
+
 
 from .models import Status, ChatType # Import our custom Status enum
 
 # --- Base Schemas (for creation) ---
+
+T = TypeVar('T')
+class PaginatedResponse(BaseModel, Generic[T]):
+    total: int
+    limit: int
+    skip: int
+    items: list[T]
+
 
 class UserCreate(BaseModel):
     telegram_id: int
@@ -16,6 +29,10 @@ class UserCreate(BaseModel):
 
 class TagCreate(BaseModel):
     name: str
+    description: Optional[str] = None
+class TagUpdate(BaseModel):
+    description: str # <-- NEW SCHEMA
+
 
 class ChannelCreate(BaseModel):
     telegram_id: int
@@ -41,6 +58,7 @@ class Tag(BaseModel):
     
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
 
 class Channel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -75,6 +93,17 @@ class Subscription(BaseModel):
     updated_at: datetime.datetime
     user: User
 
+# Generic schema for paginated responses
+class SubscriptionResponse(Subscription): # Inherits from our existing Subscription schema
+    tags: list[Tag] = []
+
+class UserResponse(User): # Inherits from our existing User schema
+    tags: List[Tag] = []  # Include tags in the user response
+    subscriptions: List[SubscriptionResponse] = []  # Include subscriptions in the user response
+
+class AddTagsRequest(BaseModel):
+    tag_names: list[str] = Field(..., min_length=1)
+
 class Message(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,3 +114,99 @@ class Message(BaseModel):
     clickable_link: str # From our @property
 
     channel: Optional[Channel] = None
+
+
+
+class MessageResponse(Message): # Inherits from our existing Message schema
+    tags: list[Tag] = []
+    channel: Optional[Channel] = None # Ensure the channel info is included
+
+
+class BaseFilterParams:
+    """
+    A base class for filter parameters. Can be extended for specific endpoints.
+    """
+    def __init__(
+        self,
+        skip: int = Query(0, ge=0, description="Number of items to skip"),
+        limit: int = Query(25, ge=1, le=100, description="Number of items to return per page"),
+        search: str | None = Query(None, description="Fuzzy search on query text"),
+        start_date: datetime.date | None = Query(None, description="Start date for filtering (YYYY-MM-DD)"),
+        end_date: datetime.date | None = Query(None, description="End date for filtering (YYYY-MM-DD)"),
+        tags: list[str] | None = Query(None, description="Filter by tags (e.g., ?tags=tech&tags=jobs)"),
+    ):
+        self.skip = skip
+        self.limit = limit
+        self.search = search
+        self.start_date = start_date
+        self.end_date = end_date
+        self.tags = tags
+
+
+class SubscriptionFilterParams(BaseFilterParams):
+    """
+    A dependency class that encapsulates all filtering and pagination
+    parameters for the subscriptions GET endpoint.
+    """
+    def __init__(
+        self,
+        common_filters: BaseFilterParams = Depends(),
+        subscription_id: uuid.UUID | None = Query(None, description="Filter by subscription ID"),
+        user_id: uuid.UUID | None = Query(None, description="Filter by user ID"),
+        status: Status | None = Query(None, description="Filter by subscription status (e.g., 'active', 'inactive')"),
+    ):
+        self.__dict__.update(common_filters.__dict__)
+
+        self.subscription_id = subscription_id
+        self.user_id = user_id
+        self.status = status
+
+class ChannelFilterParams(BaseFilterParams):
+    """Dependency class for channel filtering and pagination."""
+    def __init__(
+        self,
+        common_filters: BaseFilterParams = Depends(),
+        channel_id: uuid.UUID | None = Query(None, description="Filter by a specific channel's UUID"),
+        channel_telegram_id: int | None = Query(None, description="Filter by a specific channel's Telegram ID"),
+        type: ChatType | None = Query(None, description="Filter by channel type (e.g., 'group', 'supergroup', 'channel')"),
+        status: Status | None = Query(None, description="Filter by channel status (e.g., 'active', 'inactive')")
+    ):
+        self.__dict__.update(common_filters.__dict__)
+        self.channel_id = channel_id
+        self.channel_telegram_id = channel_telegram_id
+        self.type = type
+        self.status = status
+
+class MessageFilterParams(BaseFilterParams):
+    def __init__(
+        self,
+        common_filters: BaseFilterParams = Depends(),
+        channel_id: uuid.UUID | None = Query(None, description="Filter by a specific channel's UUID"),
+        channel_telegram_id: int | None = Query(None, description="Filter by a specific channel's Telegram ID"),
+        message_id: uuid.UUID | None = Query(None, description="Filter by a specific message's UUID")
+    ):
+        self.__dict__.update(common_filters.__dict__)
+        self.channel_id = channel_id
+        self.channel_telegram_id = channel_telegram_id
+        self.message_id = message_id
+
+class UserFilterParams(BaseFilterParams):
+    """
+    A dependency class that encapsulates all filtering and pagination
+    parameters for the users GET endpoint.
+    """
+    def __init__(
+        self,
+        common_filters: BaseFilterParams = Depends(),
+        user_id: uuid.UUID | None = Query(None, description="Filter by user ID"),
+        telegram_id: int | None = Query(None, description="Filter by Telegram ID"),
+        status: Status | None = Query(None, description="Filter by user status (e.g., 'active', 'inactive')"),
+        name: str | None = Query(None, description="Filter by user's full name (fuzzy search)"),
+        username: str | None = Query(None, description="Filter by user's username (fuzzy search)")  
+    ):
+        self.__dict__.update(common_filters.__dict__)
+        self.user_id = user_id
+        self.telegram_id = telegram_id
+        self.status = status
+        self.name = name
+        self.username = username

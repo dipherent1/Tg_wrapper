@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from ..core.telethon_client import get_telethon_client
+from ...core.listener.telethon_client import get_telethon_client
 
 router = APIRouter()
 

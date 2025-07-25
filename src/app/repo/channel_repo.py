@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from ..domain import models, schemas
 from .tag_repo import TagRepo
+from sqlalchemy.orm import selectinload
+from sqlalchemy import func, or_
+import uuid
 
 class ChannelRepo:
     def __init__(self, session: Session):
@@ -29,18 +32,59 @@ class ChannelRepo:
         self.session.add(new_channel)
         return new_channel
 
-    def add_tags_to_channel(self, channel: models.Channel, tag_names: list[str]):
+    def add_tags_to_channel(self, channel: models.Channel, tag: models.Tag):
         """
         Associates a list of tags with a channel. Creates tags if they don't exist.
         This is the correct ORM way to handle many-to-many relationships.
         """
-        for name in tag_names:
-            tag = self.tag_repo.get_or_create_tag(name)
-            if tag not in channel.tags:
-                channel.tags.append(tag)
+        
+        if tag not in channel.tags:
+            channel.tags.append(tag)
+    
+    
+    def get_channel_by_id(self, channel_id: uuid.UUID) -> models.Channel | None:
+        """Gets a single channel by its primary key (UUID)."""
+        return self.session.get(models.Channel, channel_id)
+
+    def get_paginated_channels(self, filters: schemas.ChannelFilterParams) -> tuple[int, list[models.Channel]]:
+        """A powerful query method for channels with filtering and pagination."""
+        stmt = (
+            select(models.Channel)
+            .options(selectinload(models.Channel.tags)) # Eager load tags
+            .order_by(models.Channel.name)
+        )
+
+        if filters.search:
+            # Search in both name and username
+            search_term = f"%{filters.search}%"
+            stmt = stmt.where(
+                or_(
+                    models.Channel.name.ilike(search_term),
+                    models.Channel.username.ilike(search_term)
+                )
+            )
+        if filters.tags:
+            stmt = stmt.join(models.Channel.tags).where(models.Tag.name.in_(filters.tags))
+        if filters.channel_id:
+            stmt = stmt.where(models.Channel.id == filters.channel_id)
+        if filters.channel_telegram_id:
+            stmt = stmt.where(models.Channel.telegram_id == filters.channel_telegram_id)
+        if filters.type:
+            stmt = stmt.where(models.Channel.type == filters.type)
+        if filters.status:
+            stmt = stmt.where(models.Channel.status == filters.status)
+            
+
+        total_count = self.session.scalar(select(func.count()).select_from(stmt.subquery()))
+        
+        paginated_stmt = stmt.offset(filters.skip).limit(filters.limit)
+        items = self.session.execute(paginated_stmt).scalars().unique().all()
+        
+        return total_count, items
+
     def delete_channel(self, channel: models.Channel):
         """
-        Deletes a channel record. The database's ON DELETE rules will handle
-        setting the foreign keys on messages to NULL and deleting the tag associations.
+        Deletes a channel. The DB's ON DELETE rules will handle setting
+        message foreign keys to NULL and cascading deletes to channel_tags.
         """
         self.session.delete(channel)

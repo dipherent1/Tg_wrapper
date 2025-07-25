@@ -45,6 +45,22 @@ channel_tags_table = Table(
     )
 )
 
+
+subscription_tags_table = Table(
+    'subscription_tags',
+    Base.metadata,
+    Column('subscription_id', UUID(as_uuid=True), ForeignKey('subscriptions.id', ondelete="CASCADE"), primary_key=True),
+    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id', ondelete="CASCADE"), primary_key=True)
+)
+
+message_tags_table = Table(
+    'message_tags',
+    Base.metadata,
+    Column('message_id', UUID(as_uuid=True), ForeignKey('messages.id', ondelete="CASCADE"), primary_key=True),
+    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id', ondelete="CASCADE"), primary_key=True)
+)
+
+
 # --- Core Models ---
 
 class User(Base):
@@ -106,12 +122,13 @@ class Tag(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     #TODO add description field for tags
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
     
     # Relationships
-    channels: Mapped[list["Channel"]] = relationship(
-            secondary=channel_tags_table, 
-            back_populates="tags"
-        )
+    channels: Mapped[list["Channel"]] = relationship(secondary=channel_tags_table, back_populates="tags")
+    subscriptions: Mapped[list["Subscription"]] = relationship(secondary=subscription_tags_table, back_populates="tags")
+    messages: Mapped[list["Message"]] = relationship(secondary=message_tags_table, back_populates="tags")
+
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -126,6 +143,7 @@ class Subscription(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="subscriptions")
+    tags: Mapped[list["Tag"]] = relationship(secondary=subscription_tags_table, back_populates="subscriptions")
 
 class Message(Base):
     __tablename__ = "messages"
@@ -148,6 +166,8 @@ class Message(Base):
     
     # Relationships
     channel: Mapped[Optional["Channel"]] = relationship(back_populates="messages")
+    tags: Mapped[list["Tag"]] = relationship(secondary=message_tags_table, back_populates="messages")
+
     
     @property
     def clickable_link(self) -> str:

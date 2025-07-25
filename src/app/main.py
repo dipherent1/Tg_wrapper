@@ -2,16 +2,24 @@
 
 import asyncio
 import logging
+from re import L
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler # <-- Import for file logging
 import sentry_sdk # <-- Import Sentry
-from app.config.config import settings
-from app.core.telethon_client import get_telethon_client, ACTIVE_CLIENTS
-from app.core.event_handler import setup_event_handlers
-from app.core.background_tasks import process_join_requests_task # <-- Renamed for clarity
+from app.config.config import settings, setup_logging_directory, setup_sessions_directory
+from app.core.listener.telethon_client import get_telethon_client, ACTIVE_CLIENTS
+from app.core.listener.event_handler import setup_event_handlers
+from app.core.listener.background_tasks import process_join_requests_task # <-- Renamed for clarity
+from app.routers.routers import get_routers
 
-file_handler = RotatingFileHandler('info_stream.log', maxBytes=5*1024*1024, backupCount=5)
+setup_logging_directory()  # Ensure logging directory exists
+setup_sessions_directory()  # Ensure sessions directory exists
+
+LOGS_DIR = settings.LOGS_DIR
+log_file_path = LOGS_DIR / "api_listener.log"
+
+file_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=5)
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
 # Configure basic console logging and add the file handler
@@ -69,6 +77,7 @@ async def lifespan(app: FastAPI):
 # Create the FastAPI app with the lifespan manager
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(get_routers())
 # ... (rest of your main.py file is fine) ...
 # app.include_router(onboarding.router, prefix="/api", tags=["Onboarding"])
 

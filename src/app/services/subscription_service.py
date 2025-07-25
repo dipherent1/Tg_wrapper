@@ -5,10 +5,11 @@ import uuid
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from typing import List
+import datetime
 
 logger = logging.getLogger(__name__)
 
-def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Subscription:
+def add_subscription_for_user(user_id: uuid.UUID, query_text: str, tag_names: List[str]) -> models.Subscription:
     """
     Core business logic to create a new subscription for a given user.
     
@@ -23,13 +24,30 @@ def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Sub
 
     with UnitOfWork() as uow:
         # Create the Pydantic schema for the new subscription
+
+        tags_to_add = []
+        if tag_names:
+            for tag_name in tag_names:
+                tag = uow.tags.get_or_create_tag(name=tag_name, description="")
+                if tag:
+                    tags_to_add.append(tag)
+        
+        else:
+            tag = uow.tags.get_or_create_tag(name="others", description="default tag")
+                
+        
         sub_schema = schemas.SubscriptionCreate(
             user_id=user_id,
-            query_text=query_text
+            query_text=query_text,
         )
 
         # Use the repository to create the subscription
         subscription_orm = uow.subscriptions.create_subscription(sub_schema)
+        if tags_to_add:
+            for tag in tags_to_add:
+                if tag not in subscription_orm.tags:
+                    subscription_orm.tags.append(tag)
+
 
         # Flush the session to get the DB-generated defaults (id, created_at, etc.)
         uow.session.flush()
@@ -119,3 +137,56 @@ def edit_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID, new_query_
         # UoW will commit the changes upon exit.
     
     return True
+
+def get_all_subscriptions_paginated(
+    filters: schemas.SubscriptionFilterParams
+) -> tuple[int, list[schemas.SubscriptionResponse]]:
+    """
+    Service to fetch all subscriptions with filtering and pagination.
+    Accepts a filter parameter object.
+    """
+    logger.info("Service: Fetching all paginated subscriptions.")
+    with UnitOfWork() as uow:
+        total, subs_orm = uow.subscriptions.get_paginated_subscriptions(
+            filters=filters
+        )
+        subs_dto = [schemas.SubscriptionResponse.model_validate(s) for s in subs_orm]
+    return total, subs_dto
+
+
+
+# --- NEW SERVICE FUNCTION FOR THE API ---
+def add_tags_to_subscription(sub_id: uuid.UUID, tag_names: list[str]) -> schemas.SubscriptionResponse | None:
+    """
+    Service to add tags to a subscription. It orchestrates both the
+    SubscriptionRepo and the TagRepo.
+    """
+    logger.info(f"Service: Adding tags {tag_names} to subscription {sub_id}")
+    with UnitOfWork() as uow:
+        # Step 1: Get the subscription
+        subscription = uow.subscriptions.get_subscription_by_id(sub_id)
+        if not subscription:
+            return None
+
+        # Step 2: Get the tag objects
+        tags_to_add = []
+        if tag_names:
+            for tag_name in tag_names:
+                tag = uow.tags.get_or_create_tag(tag_name, description="")
+                if tag:
+                    tags_to_add.append(tag)
+        
+        else:
+            # If no tags were specified, we can add a default tag.
+            tag = uow.tags.get_or_create_tag(name="others", description="Default tag")
+            tags_to_add.append(tag)
+
+        # Step 3: Append the new tags
+        for tag in tags_to_add:
+            if tag not in subscription.tags:
+                subscription.tags.append(tag)
+        
+        uow.session.flush()
+        response_dto = schemas.SubscriptionResponse.model_validate(subscription)
+
+    return response_dto

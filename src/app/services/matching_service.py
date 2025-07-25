@@ -3,7 +3,7 @@
 import logging
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
-from app.core.notifier import send_telegram_notification
+from app.core.bot.notifier import send_telegram_notification
 
 logger = logging.getLogger(__name__)
 

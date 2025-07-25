@@ -4,8 +4,10 @@ import logging
 from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
+from logging.handlers import RotatingFileHandler
 import uuid
 from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription, edit_subscription
+from app.services.tag_service import get_all_tags
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -15,16 +17,35 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from app.core.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
+from app.core.bot.bot_utils import ensure_user, escape_markdown_v2, normalize_identifier # <-- Import our new decorator
 from app.services.user_service import get_or_create_user
 import sentry_sdk
 
-from app.config.config import settings, load_tags_from_config
+from app.config.config import settings, setup_logging_directory, setup_sessions_directory
 from app.services.join_request_service import create_join_request
 
-# --- Setup ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+setup_logging_directory()  # Ensure logging directory exists
+setup_sessions_directory()  # Ensure sessions directory exists
+
+LOGS_DIR = settings.LOGS_DIR
+
+logger = logging.getLogger("Bot") # Give it a custom name
+logger.setLevel(logging.INFO)
+
+# Create a dedicated file handler for the bot
+
+log_file_path = LOGS_DIR / "bot.log"
+bot_file_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=5)
+bot_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+# Add the file handler to our bot logger
+logger.addHandler(bot_file_handler)
+
+# Also add a console handler to see logs in the terminal
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
+
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(
@@ -41,8 +62,9 @@ else:
 (ASK_NEW_QUERY,) = range(10, 11)
 
 # --- List of available tags. Later this can come from the DB. ---
-# As requested, 'default' is included as a choice.
-AVAILABLE_TAGS = load_tags_from_config()
+# As requested, 'others' is included as a choice.
+AVAILABLE_TAGS = get_all_tags()
+# logger.info(f"Loaded {AVAILABLE_TAGS} available tags from the service.")
 
 
 
@@ -91,7 +113,7 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # --- Create keyboard for tag selection (code is identical to before) ---
     keyboard_buttons = [
-        InlineKeyboardButton(tag['name'], callback_data=f"tag_{tag['slug']}")
+        InlineKeyboardButton(tag.name, callback_data=f"tag_{tag.name}")
         for tag in AVAILABLE_TAGS
     ]
     
@@ -123,10 +145,10 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         # The selected_tags set now contains slugs, e.g., {'backend-dev', 'jobs-hiring'}
         selected_tags = list(context.user_data.get('selected_tags', set()))
 
-        # If no tags were selected, use the slug for the default tag.
-        # We find the default tag's data from our loaded config.
+        # If no tags were selected, use the slug for the others tag.
+        # We find the others tag's data from our loaded config.
         if not selected_tags:
-            default_tag_slug = "default" # Fallback to 'default'
+            default_tag_slug = "others" # Fallback to 'others'
             selected_tags.append(default_tag_slug)
         
         try:
@@ -139,9 +161,9 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                 user_id=db_user.id
             )
 
-            # For the final message, we need to convert slugs back to pretty names
+            # For the final message, we need to convert back to pretty names
             final_tag_names = [
-                tag['name'] for tag in AVAILABLE_TAGS if tag['slug'] in selected_tags
+                tag.name for tag in AVAILABLE_TAGS if tag.name in selected_tags
             ]
             final_tags_str = ', '.join(final_tag_names)
             
@@ -176,9 +198,9 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         
         # 4. Redraw the keyboard, iterating over the list of tag DICTIONARIES
         keyboard_buttons = []
-        for tag_data in AVAILABLE_TAGS:
-            slug = tag_data['slug']
-            name = tag_data['name']
+        for tag in AVAILABLE_TAGS:
+            slug = tag.name
+            name = tag.name
             # Check if the SLUG is in our selected set
             text = f"✅ {name}" if slug in selected_tags else name
             # The button text is the NAME, the callback data is the SLUG
@@ -221,9 +243,12 @@ async def handle_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             raise ValueError("Could not find user in context. Please /start the bot again.")
 
         # Call our clean, reusable service function
+
+        tag_names = ["others"]
         add_subscription_for_user(
             user_id=db_user_id,
-            query_text=query_text
+            query_text=query_text,
+            tag_names=tag_names
         )
 
         await update.message.reply_text(
@@ -413,7 +438,7 @@ def main() -> None:
         },
         fallbacks=[CommandHandler("cancel", subscribe_cancel)],
         # It's good practice to allow conversations to time out
-        conversation_timeout=600 # 10 minutes
+        conversation_timeout=600, # 10 minutes
     )
     application.add_handler(subscribe_conv_handler)
     application.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
@@ -430,7 +455,8 @@ def main() -> None:
         # This allows the handler to be triggered by a button from another handler
         map_to_parent={
             ConversationHandler.END: -1 # Or another state if you want to go back to the list
-        }
+        },
+        conversation_timeout=600,# 10 minutes
     )
     application.add_handler(edit_sub_conv_handler)
 
@@ -445,7 +471,7 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=600 # 10 minutes
+        conversation_timeout=600,# 10 minutes
     )
     application.add_handler(add_channel_conv_handler)
 
@@ -456,7 +482,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_cmd))
 
     logger.info("[Bot] Starting polling...")
-    
+
     # 3. Run the bot until you press Ctrl-C
     # This method is blocking and handles the asyncio loop internally for you.
     # It takes care of initialization, running, and shutdown automatically.
