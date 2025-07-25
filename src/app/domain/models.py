@@ -45,6 +45,13 @@ channel_tags_table = Table(
     )
 )
 
+
+subscription_tags_table = Table(
+    'subscription_tags',
+    Base.metadata,
+    Column('subscription_id', UUID(as_uuid=True), ForeignKey('subscriptions.id', ondelete="CASCADE"), primary_key=True),
+    Column('tag_id', UUID(as_uuid=True), ForeignKey('tags.id', ondelete="CASCADE"), primary_key=True)
+)
 # --- Core Models ---
 
 class User(Base):
@@ -112,6 +119,8 @@ class Tag(Base):
             secondary=channel_tags_table, 
             back_populates="tags"
         )
+    subscriptions: Mapped[list["Subscription"]] = relationship(secondary=subscription_tags_table, back_populates="tags")
+
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -126,6 +135,7 @@ class Subscription(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="subscriptions")
+    tags: Mapped[list["Tag"]] = relationship(secondary=subscription_tags_table, back_populates="subscriptions")
 
 class Message(Base):
     __tablename__ = "messages"

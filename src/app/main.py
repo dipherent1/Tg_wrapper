@@ -11,6 +11,7 @@ from app.config.config import settings, setup_logging_directory, setup_sessions_
 from app.core.listener.telethon_client import get_telethon_client, ACTIVE_CLIENTS
 from app.core.listener.event_handler import setup_event_handlers
 from app.core.listener.background_tasks import process_join_requests_task # <-- Renamed for clarity
+from app.routers.routers import get_routers
 
 setup_logging_directory()  # Ensure logging directory exists
 setup_sessions_directory()  # Ensure sessions directory exists
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
 # Create the FastAPI app with the lifespan manager
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(get_routers())
 # ... (rest of your main.py file is fine) ...
 # app.include_router(onboarding.router, prefix="/api", tags=["Onboarding"])
 

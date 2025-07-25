@@ -5,6 +5,7 @@ import uuid
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from typing import List
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +120,56 @@ def edit_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID, new_query_
         # UoW will commit the changes upon exit.
     
     return True
+
+def get_all_subscriptions_paginated(
+    filters: schemas.SubscriptionFilterParams
+) -> tuple[int, list[schemas.SubscriptionResponse]]:
+    """
+    Service to fetch all subscriptions with filtering and pagination.
+    Accepts a filter parameter object.
+    """
+    logger.info("Service: Fetching all paginated subscriptions.")
+    with UnitOfWork() as uow:
+        total, subs_orm = uow.subscriptions.get_paginated_subscriptions(
+            skip=filters.skip,
+            limit=filters.limit,
+            search=filters.search,
+            start_date=filters.start_date,
+            end_date=filters.end_date,
+            tags=filters.tags
+        )
+        subs_dto = [schemas.SubscriptionResponse.model_validate(s) for s in subs_orm]
+    return total, subs_dto
+
+
+
+# --- NEW SERVICE FUNCTION FOR THE API ---
+def add_tags_to_subscription(sub_id: uuid.UUID, tag_names: list[str]) -> schemas.SubscriptionResponse | None:
+    """
+    Service to add tags to a subscription. It orchestrates both the
+    SubscriptionRepo and the TagRepo.
+    """
+    logger.info(f"Service: Adding tags {tag_names} to subscription {sub_id}")
+    with UnitOfWork() as uow:
+        # Step 1: Get the subscription
+        subscription = uow.subscriptions.get_subscription_by_id(sub_id)
+        if not subscription:
+            return None
+
+        # Step 2: Get the tag objects
+        tags_to_add = []
+        for tag_name in tag_names:
+            tag = uow.tags.get_or_create_tag(tag_name)
+            if tag:
+                tags_to_add.append(tag)
+
+
+        # Step 3: Append the new tags
+        for tag in tags_to_add:
+            if tag not in subscription.tags:
+                subscription.tags.append(tag)
+        
+        uow.session.flush()
+        response_dto = schemas.SubscriptionResponse.model_validate(subscription)
+
+    return response_dto
