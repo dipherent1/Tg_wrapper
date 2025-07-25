@@ -1,6 +1,7 @@
 # src/app/domain/schemas.py
 
 from email import message
+from os import name
 import uuid
 import datetime
 from pydantic import BaseModel, ConfigDict, Field
@@ -96,6 +97,10 @@ class Subscription(BaseModel):
 class SubscriptionResponse(Subscription): # Inherits from our existing Subscription schema
     tags: list[Tag] = []
 
+class UserResponse(User): # Inherits from our existing User schema
+    tags: List[Tag] = []  # Include tags in the user response
+    subscriptions: List[SubscriptionResponse] = []  # Include subscriptions in the user response
+
 class AddTagsRequest(BaseModel):
     tag_names: list[str] = Field(..., min_length=1)
 
@@ -184,4 +189,24 @@ class MessageFilterParams(BaseFilterParams):
         self.channel_id = channel_id
         self.channel_telegram_id = channel_telegram_id
         self.message_id = message_id
-        
+
+class UserFilterParams(BaseFilterParams):
+    """
+    A dependency class that encapsulates all filtering and pagination
+    parameters for the users GET endpoint.
+    """
+    def __init__(
+        self,
+        common_filters: BaseFilterParams = Depends(),
+        user_id: uuid.UUID | None = Query(None, description="Filter by user ID"),
+        telegram_id: int | None = Query(None, description="Filter by Telegram ID"),
+        status: Status | None = Query(None, description="Filter by user status (e.g., 'active', 'inactive')"),
+        name: str | None = Query(None, description="Filter by user's full name (fuzzy search)"),
+        username: str | None = Query(None, description="Filter by user's username (fuzzy search)")  
+    ):
+        self.__dict__.update(common_filters.__dict__)
+        self.user_id = user_id
+        self.telegram_id = telegram_id
+        self.status = status
+        self.name = name
+        self.username = username

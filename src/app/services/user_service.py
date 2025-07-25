@@ -4,7 +4,7 @@ import logging
 from telegram import User as TelegramUser # Use an alias to avoid name clashes
 from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
-
+import uuid
 logger = logging.getLogger(__name__)
 
 def get_or_create_user(telegram_user: TelegramUser) -> models.User:
@@ -31,3 +31,35 @@ def get_or_create_user(telegram_user: TelegramUser) -> models.User:
 
     # Return the Pydantic model, which is a safe, detached copy of the data.
     return user_dto
+
+def get_all_users_paginated(filters: schemas.UserFilterParams) -> tuple[int, list[schemas.UserResponse]]:
+    """
+    Get all users with advanced filtering and pagination.
+    Returns a tuple of total count and a list of UserResponse schemas.
+    """
+    logger.info(f"Service: Getting all users with filters {filters}")
+
+    with UnitOfWork() as uow:
+        total, users_dto = uow.users.get_all_users_paginated(filters)
+
+        # Convert the list of database models to Pydantic schemas
+        users_schemas = [schemas.UserResponse.model_validate(user) for user in users_dto]
+
+    return total, users_schemas
+
+def delete_user(user_id: uuid.UUID):
+    """
+    Delete a user by their ID.
+    This will soft-delete the user by setting their status to DELETED.
+    """
+    logger.info(f"Service: Deleting user {user_id}")
+
+    with UnitOfWork() as uow:
+        user = uow.users.get_user_by_id(user_id)
+        if not user:
+            raise ValueError(f"User with ID {user_id} not found")
+
+        # Soft delete the user
+        user.status = models.Status.DELETED
+
+    return True

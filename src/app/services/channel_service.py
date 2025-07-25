@@ -67,7 +67,7 @@ def leave_channel(channel_id: uuid.UUID) -> None:
             logger.warning(f"Channel with ID {channel_id} not found.")
             return
         
-        channel.status = schemas.Status.INACTIVE
+        channel.status = schemas.Status.DELETED
         uow.session.flush()
         uow.session.refresh(channel)
         logger.info(f"Successfully left channel with ID {channel_id}.")
