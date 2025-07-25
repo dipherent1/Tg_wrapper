@@ -155,7 +155,7 @@ def add_tags_to_subscription(sub_id: uuid.UUID, tag_names: list[str]) -> schemas
         tags_to_add = []
         if tag_names:
             for tag_name in tag_names:
-                tag = uow.tags.get_or_create_tag(tag_name)
+                tag = uow.tags.get_or_create_tag(tag_name, description="")
                 if tag:
                     tags_to_add.append(tag)
 

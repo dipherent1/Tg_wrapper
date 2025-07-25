@@ -27,6 +27,10 @@ class UserCreate(BaseModel):
 
 class TagCreate(BaseModel):
     name: str
+    description: Optional[str] = None
+class TagUpdate(BaseModel):
+    description: str # <-- NEW SCHEMA
+
 
 class ChannelCreate(BaseModel):
     telegram_id: int
@@ -52,6 +56,7 @@ class Tag(BaseModel):
     
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
 
 class Channel(BaseModel):
     model_config = ConfigDict(from_attributes=True)

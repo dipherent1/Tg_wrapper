@@ -28,8 +28,12 @@ def add_channel_with_tags(channel_schema: schemas.ChannelCreate, tag_names: list
         
         # Step 2: Add the specified tags to the channel.
         # The repository handles the logic of finding/creating tags and linking them.
-        uow.channels.add_tags_to_channel(channel=channel_orm, tag_names=tag_names)
-        
+        if tag_names:
+            for tag_name in tag_names:
+                tag = uow.tags.get_or_create_tag(name=tag_name, description="")
+                if tag:
+                    uow.channels.add_tags_to_channel(channel=channel_orm, tag=tag)
+
         # The UnitOfWork will automatically commit the session when the 'with' block exits.
         # This saves the channel and the tags/links in a single atomic transaction.
         uow.session.flush()

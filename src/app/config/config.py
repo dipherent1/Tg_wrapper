@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SESSIONS_DIR: Path = BASE_DIR / "sessions"
 
-    TAGS_FILE_PATH: Path = BASE_DIR / "src/app/config/tags.json"
+    # TAGS_FILE_PATH: Path = BASE_DIR / "src/app/config/tags.json"
     LOGS_DIR: Path = BASE_DIR / "logs"
     class Config:
         # This will automatically look for a .env file
@@ -37,22 +37,22 @@ def setup_sessions_directory():
     logger.info(f"Setting up sessions directory at {settings.SESSIONS_DIR}, base dir: {BASE_DIR}")
     settings.SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-def load_tags_from_config() -> list[dict]:
-    """Loads and validates the tags from the JSON configuration file."""
-    logger.info(f"Loading tags from {settings.TAGS_FILE_PATH}")
-    try:
-        with open(settings.TAGS_FILE_PATH, 'r') as f:
-            data = json.load(f)
+# def load_tags_from_config() -> list[dict]:
+#     """Loads and validates the tags from the JSON configuration file."""
+#     logger.info(f"Loading tags from {settings.TAGS_FILE_PATH}")
+#     try:
+#         with open(settings.TAGS_FILE_PATH, 'r') as f:
+#             data = json.load(f)
         
-        # Basic validation
-        if "tags" in data and isinstance(data["tags"], list):
-            return data["tags"]
-        else:
-            # Handle error case where JSON is malformed
-            return []
-    except (FileNotFoundError, json.JSONDecodeError):
-        # Handle cases where the file doesn't exist or is invalid JSON
-        return []
+#         # Basic validation
+#         if "tags" in data and isinstance(data["tags"], list):
+#             return data["tags"]
+#         else:
+#             # Handle error case where JSON is malformed
+#             return []
+#     except (FileNotFoundError, json.JSONDecodeError):
+#         # Handle cases where the file doesn't exist or is invalid JSON
+#         return []
 
 
 

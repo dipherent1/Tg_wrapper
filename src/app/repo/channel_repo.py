@@ -29,15 +29,16 @@ class ChannelRepo:
         self.session.add(new_channel)
         return new_channel
 
-    def add_tags_to_channel(self, channel: models.Channel, tag_names: list[str]):
+    def add_tags_to_channel(self, channel: models.Channel, tag: models.Tag):
         """
         Associates a list of tags with a channel. Creates tags if they don't exist.
         This is the correct ORM way to handle many-to-many relationships.
         """
-        for name in tag_names:
-            tag = self.tag_repo.get_or_create_tag(name)
-            if tag not in channel.tags:
-                channel.tags.append(tag)
+        
+        if tag not in channel.tags:
+            channel.tags.append(tag)
+    
+    
     def delete_channel(self, channel: models.Channel):
         """
         Deletes a channel record. The database's ON DELETE rules will handle

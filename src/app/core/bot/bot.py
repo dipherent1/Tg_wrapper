@@ -7,6 +7,7 @@ import asyncio
 from logging.handlers import RotatingFileHandler
 import uuid
 from app.services.subscription_service import add_subscription_for_user, get_user_subscriptions, cancel_subscription, edit_subscription
+from app.services.tag_service import get_all_tags
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -20,7 +21,7 @@ from app.core.bot.bot_utils import ensure_user, escape_markdown_v2, normalize_id
 from app.services.user_service import get_or_create_user
 import sentry_sdk
 
-from app.config.config import settings, load_tags_from_config, setup_logging_directory, setup_sessions_directory
+from app.config.config import settings, setup_logging_directory, setup_sessions_directory
 from app.services.join_request_service import create_join_request
 
 setup_logging_directory()  # Ensure logging directory exists
@@ -62,7 +63,7 @@ else:
 
 # --- List of available tags. Later this can come from the DB. ---
 # As requested, 'default' is included as a choice.
-AVAILABLE_TAGS = load_tags_from_config()
+AVAILABLE_TAGS = get_all_tags()
 
 
 
