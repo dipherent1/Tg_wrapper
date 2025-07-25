@@ -62,8 +62,9 @@ else:
 (ASK_NEW_QUERY,) = range(10, 11)
 
 # --- List of available tags. Later this can come from the DB. ---
-# As requested, 'default' is included as a choice.
+# As requested, 'others' is included as a choice.
 AVAILABLE_TAGS = get_all_tags()
+logger.info(f"Loaded {AVAILABLE_TAGS} available tags from the service.")
 
 
 
@@ -112,7 +113,7 @@ async def handle_channel_input(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # --- Create keyboard for tag selection (code is identical to before) ---
     keyboard_buttons = [
-        InlineKeyboardButton(tag['name'], callback_data=f"tag_{tag['slug']}")
+        InlineKeyboardButton(tag.name, callback_data=f"tag_{tag.name}")
         for tag in AVAILABLE_TAGS
     ]
     
@@ -144,10 +145,10 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         # The selected_tags set now contains slugs, e.g., {'backend-dev', 'jobs-hiring'}
         selected_tags = list(context.user_data.get('selected_tags', set()))
 
-        # If no tags were selected, use the slug for the default tag.
-        # We find the default tag's data from our loaded config.
+        # If no tags were selected, use the slug for the others tag.
+        # We find the others tag's data from our loaded config.
         if not selected_tags:
-            default_tag_slug = "default" # Fallback to 'default'
+            default_tag_slug = "others" # Fallback to 'others'
             selected_tags.append(default_tag_slug)
         
         try:
@@ -160,9 +161,9 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                 user_id=db_user.id
             )
 
-            # For the final message, we need to convert slugs back to pretty names
+            # For the final message, we need to convert back to pretty names
             final_tag_names = [
-                tag['name'] for tag in AVAILABLE_TAGS if tag['slug'] in selected_tags
+                tag.name for tag in AVAILABLE_TAGS if tag.name in selected_tags
             ]
             final_tags_str = ', '.join(final_tag_names)
             
@@ -197,9 +198,9 @@ async def handle_tag_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         
         # 4. Redraw the keyboard, iterating over the list of tag DICTIONARIES
         keyboard_buttons = []
-        for tag_data in AVAILABLE_TAGS:
-            slug = tag_data['slug']
-            name = tag_data['name']
+        for tag in AVAILABLE_TAGS:
+            slug = tag.name
+            name = tag.name
             # Check if the SLUG is in our selected set
             text = f"✅ {name}" if slug in selected_tags else name
             # The button text is the NAME, the callback data is the SLUG
@@ -242,9 +243,12 @@ async def handle_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             raise ValueError("Could not find user in context. Please /start the bot again.")
 
         # Call our clean, reusable service function
+
+        tag_names = ["others"]
         add_subscription_for_user(
             user_id=db_user_id,
-            query_text=query_text
+            query_text=query_text,
+            tag_names=tag_names
         )
 
         await update.message.reply_text(

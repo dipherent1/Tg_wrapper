@@ -9,7 +9,7 @@ import datetime
 
 logger = logging.getLogger(__name__)
 
-def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Subscription:
+def add_subscription_for_user(user_id: uuid.UUID, query_text: str, tag_names: List[str]) -> models.Subscription:
     """
     Core business logic to create a new subscription for a given user.
     
@@ -24,13 +24,30 @@ def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Sub
 
     with UnitOfWork() as uow:
         # Create the Pydantic schema for the new subscription
+
+        tags_to_add = []
+        if tag_names:
+            for tag_name in tag_names:
+                tag = uow.tags.get_or_create_tag(name=tag_name, description="")
+                if tag:
+                    tags_to_add.append(tag)
+        
+        else:
+            tag = uow.tags.get_or_create_tag(name="others", description="default tag")
+                
+        
         sub_schema = schemas.SubscriptionCreate(
             user_id=user_id,
-            query_text=query_text
+            query_text=query_text,
         )
 
         # Use the repository to create the subscription
         subscription_orm = uow.subscriptions.create_subscription(sub_schema)
+        if tags_to_add:
+            for tag in tags_to_add:
+                if tag not in subscription_orm.tags:
+                    subscription_orm.tags.append(tag)
+
 
         # Flush the session to get the DB-generated defaults (id, created_at, etc.)
         uow.session.flush()
@@ -158,7 +175,11 @@ def add_tags_to_subscription(sub_id: uuid.UUID, tag_names: list[str]) -> schemas
                 tag = uow.tags.get_or_create_tag(tag_name, description="")
                 if tag:
                     tags_to_add.append(tag)
-
+        
+        else:
+            # If no tags were specified, we can add a default tag.
+            tag = uow.tags.get_or_create_tag(name="others", description="Default tag")
+            tags_to_add.append(tag)
 
         # Step 3: Append the new tags
         for tag in tags_to_add:

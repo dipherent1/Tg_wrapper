@@ -32,8 +32,11 @@ def add_channel_with_tags(channel_schema: schemas.ChannelCreate, tag_names: list
             for tag_name in tag_names:
                 tag = uow.tags.get_or_create_tag(name=tag_name, description="")
                 if tag:
-                    uow.channels.add_tags_to_channel(channel=channel_orm, tag=tag)
-
+                    channel_orm.tags.append(tag)
+        else:
+            # If no tags were specified, we can add a default tag.
+            tag = uow.tags.get_or_create_tag(name="others", description="Default tag")
+            channel_orm.tags.append(tag)
         # The UnitOfWork will automatically commit the session when the 'with' block exits.
         # This saves the channel and the tags/links in a single atomic transaction.
         uow.session.flush()

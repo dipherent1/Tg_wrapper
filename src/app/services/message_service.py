@@ -19,8 +19,8 @@ def save_new_message(message_schema: schemas.MessageCreate, channel_schema: sche
         channel_orm = uow.channels.get_or_create_channel(channel_schema)
 
         if not channel_orm.tags:
-            tag = uow.tags.get_or_create_tag(name="default", description="Default tag for new channels")
-            uow.channels.add_tags_to_channel(channel=channel_orm, tag=tag)
+            tag = uow.tags.get_or_create_tag(name="others", description="Default tag")
+            channel_orm.tags.append(tag)
 
         # --- THIS IS THE FIX ---
         # Step 2: Pass the message schema AND the channel ORM object to the repo.
@@ -57,7 +57,11 @@ def add_tags_to_message(message_id: uuid.UUID, tag_names: list[str]) -> schemas.
                 tag = uow.tags.get_or_create_tag(tag_name, description="")
                 if tag:
                     tags_to_add.append(tag)
-
+        else:
+            # If no tags were specified, we can add a default tag.
+            tag = uow.tags.get_or_create_tag(name="others", description="Default tag")
+            tags_to_add.append(tag)
+            
         if tags_to_add:
             for tag in tags_to_add:
                 if tag not in message.tags:
