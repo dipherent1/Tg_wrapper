@@ -15,7 +15,6 @@ httpcore==1.0.9
 httptools==0.6.4
 httpx==0.28.1
 idna==3.10
--e git+https://github.com/dipherent1/Tg_wrapper.git@a863d42d52cd34dc49f82dcc593306cbc8111103#egg=info_stream
 itsdangerous==2.2.0
 Jinja2==3.1.6
 Mako==1.3.10
