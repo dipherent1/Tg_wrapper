@@ -210,6 +210,7 @@ __marimo__/
 .tgwrap/
 
 # Sensitive Files
+session/
 *.session
 *.session-journal
 
