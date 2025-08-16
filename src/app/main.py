@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     logger.info("--- Starting application lifespan ---")
     
     # We only need one client instance for both listening and joining
-    main_session_name = "bini"
+    main_session_name = settings.DEFAULT_SESSION_NAME
     client = get_telethon_client(main_session_name)
     
     logger.info(f"Connecting main client for '{main_session_name}'...")
