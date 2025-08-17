@@ -9,7 +9,7 @@ import datetime
 
 logger = logging.getLogger(__name__)
 
-def add_subscription_for_user(user_id: uuid.UUID, query_text: str) -> models.Subscription:
+def add_subscription_for_user(user_id: uuid.UUID, query_text: str, tag_names: List[str]) -> models.Subscription:
     """
     Core business logic to create a new subscription for a given user.
     

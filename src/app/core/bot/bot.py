@@ -248,6 +248,8 @@ async def handle_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         add_subscription_for_user(
             user_id=db_user_id,
             query_text=query_text,
+            tag_names=tag_names
+
         )
 
         await update.message.reply_text(
