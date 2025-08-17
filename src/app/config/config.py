@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # Directories
     SENTRY_DSN: str = ""
     SESSIONS_DIR: Path = BASE_DIR / "sessions"
+    WEBHOOK_URL: str = ""
 
     # TAGS_FILE_PATH: Path = BASE_DIR / "src/app/config/tags.json"
     LOGS_DIR: Path = BASE_DIR / "logs"
