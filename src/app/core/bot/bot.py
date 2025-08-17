@@ -549,3 +549,6 @@ async def process_telegram_update(token: str, request: Request):
 def health_check():
     """A simple endpoint for keep-alive services to ping."""
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    uvicorn.run(api, host="0.0.0.0", port=8000)
