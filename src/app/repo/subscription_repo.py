@@ -45,9 +45,13 @@ class SubscriptionRepo:
         subscription.status = models.Status.DELETED
         # The change is added to the session, to be committed by the UoW.
         
-    def update_subscription_query(self, subscription: models.Subscription, new_query_text: str):
+    def update_subscription_query(self, subscription: models.Subscription, new_query_text: str, generated_embedding: list[float] | None = None):
         """Updates the query_text of a given subscription object."""
         subscription.query_text = new_query_text
+        if generated_embedding is not None:
+            subscription.embedding = generated_embedding
+        else:
+            subscription.embedding = None
         subscription.updated_at = models.func.now()  # Update the timestamp
 
     def get_paginated_subscriptions(
@@ -86,3 +90,13 @@ class SubscriptionRepo:
         items = self.session.execute(paginated_stmt).scalars().all()
         
         return total_count, items
+
+    # In src/app/repo/subscription_repo.py
+    def get_all_active_subscription_embeddings(self) -> list[models.Subscription]:
+        """Fetches all active subscriptions that have an embedding."""
+        return self.session.execute(
+            select(models.Subscription)
+            .where(models.Subscription.status == models.Status.ACTIVE)
+            .where(models.Subscription.embedding != None)
+            .options(selectinload(models.Subscription.user))
+        ).scalars().all()

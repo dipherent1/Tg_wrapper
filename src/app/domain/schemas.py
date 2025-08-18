@@ -43,6 +43,7 @@ class ChannelCreate(BaseModel):
 class SubscriptionCreate(BaseModel):
     user_id: uuid.UUID
     query_text: str
+    embedding: Optional[list[float]] = None  # <-- We will handle this in the service layer
 
 class MessageCreate(BaseModel):
     telegram_message_id: int
