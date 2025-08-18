@@ -214,5 +214,5 @@ session/
 *.session
 *.session-journal
 
-alembic.ini
+# alembic.ini
 alembic/versions/
