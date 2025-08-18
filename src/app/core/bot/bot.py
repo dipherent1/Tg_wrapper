@@ -436,119 +436,70 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # --- KEEP ALL YOUR EXISTING STATE DEFINITIONS (ASK_CHANNEL, ASK_TAGS, etc.) ---
 
 
-# --- REFACTORED: Main Bot Setup (The Webhook Way) ---
-
-# 1. Create the python-telegram-bot Application object
-# We no longer need the top-level @ensure_user decorator for start_cmd, 
-# as the main decorator will handle user creation.
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Use /help for more.")
+def main() -> None:
+    """Sets up and runs the bot with all handlers using polling."""
     
-ptb_app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    # 1. Create the Application object
+    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
 
-# 2. Add all your existing handlers to the application object
-# Subscription Conversation Handler
-subscribe_conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("subscribe", subscribe_start)],
-    states={
-        ASK_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_query_input)],
-    },
-    fallbacks=[CommandHandler("cancel", subscribe_cancel)],
-    conversation_timeout=600,
-)
-ptb_app.add_handler(subscribe_conv_handler)
-
-# Standalone handlers for listing and cancelling
-ptb_app.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
-ptb_app.add_handler(CallbackQueryHandler(handle_cancel_button, pattern="^cancel_sub_"))
-
-# Edit Subscription Conversation Handler (remove map_to_parent)
-edit_sub_conv_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(edit_subscription_start, pattern="^edit_sub_")],
-    states={
-        ASK_NEW_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_query_input)],
-    },
-    fallbacks=[CommandHandler("cancel", edit_cancel)],
-    conversation_timeout=600,
-)
-ptb_app.add_handler(edit_sub_conv_handler)
-
-# Channel Conversation Handler
-add_channel_conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("addchannel", add_channel_start)],
-    states={
-        ASK_CHANNEL: [MessageHandler(filters.TEXT | filters.FORWARDED, handle_channel_input)],
-        ASK_TAGS: [
-            CallbackQueryHandler(handle_tag_selection, pattern="^tags_done$"),
-            CallbackQueryHandler(handle_tag_selection, pattern="^tag_")
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-    conversation_timeout=600,
-)
-ptb_app.add_handler(add_channel_conv_handler)
-
-# General handlers
-ptb_app.add_handler(CommandHandler("start", start_cmd))
-ptb_app.add_handler(CommandHandler("help", help_command))
-
-
-# 3. Create the FastAPI application
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Handles the bot's startup and shutdown logic using the modern
-    lifespan event handler.
-    """
-    # --- Code to run on startup ---
-    logger.info("Application starting up...")
-    await ptb_app.initialize()
+    # 2. Add all your existing handlers to the application object
+    # (This logic is moved from the global scope into the main function)
     
-    webhook_url = settings.WEBHOOK_URL
-    if not webhook_url:
-        logger.error("WEBHOOK_URL environment variable not set! Webhook cannot be set.")
-    else:
-        full_webhook_url = f"{webhook_url}/webhook/{settings.TELEGRAM_BOT_TOKEN}"
-        await ptb_app.bot.set_webhook(url=full_webhook_url)
-        logger.info(f"Webhook set successfully to {full_webhook_url}")
-    
-    # This 'yield' is where the application will run.
-    yield
-    
-    # --- Code to run on shutdown ---
-    logger.info("Application shutting down. Deleting webhook.")
-    await ptb_app.bot.delete_webhook()
-    await ptb_app.shutdown()
+    # Subscription Conversation Handler
+    subscribe_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("subscribe", subscribe_start)],
+        states={
+            ASK_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_query_input)],
+        },
+        fallbacks=[CommandHandler("cancel", subscribe_cancel)],
+        conversation_timeout=600,
+    )
+    application.add_handler(subscribe_conv_handler)
 
+    # Standalone handlers for listing and cancelling
+    application.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
+    application.add_handler(CallbackQueryHandler(handle_cancel_button, pattern="^cancel_sub_"))
 
-api = FastAPI(
-    lifespan=lifespan,
-    title="Info-Stream Bot Webhook",
-    version="1.0.0",
-    description="Handles incoming updates from Telegram for the Info-Stream bot."
-)
-# 5. Define the main webhook endpoint
-@api.post("/webhook/{token}")
-async def process_telegram_update(token: str, request: Request):
-    """
-    This endpoint receives all updates from Telegram.
-    It includes a token in the URL for basic security.
-    """
-    if token != settings.TELEGRAM_BOT_TOKEN:
-        return Response(status_code=403) # Forbidden
+    # Edit Subscription Conversation Handler
+    edit_sub_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(edit_subscription_start, pattern="^edit_sub_")],
+        states={
+            ASK_NEW_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_query_input)],
+        },
+        fallbacks=[CommandHandler("cancel", edit_cancel)],
+        conversation_timeout=600,
+    )
+    application.add_handler(edit_sub_conv_handler)
 
-    json_data = await request.json()
-    update = Update.de_json(json_data, ptb_app.bot)
-    await ptb_app.process_update(update)
-    
-    return Response(status_code=200) # Always return 200 OK to Telegram
+    # Channel Conversation Handler
+    add_channel_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("addchannel", add_channel_start)],
+        states={
+            ASK_CHANNEL: [MessageHandler(filters.TEXT | filters.FORWARDED, handle_channel_input)],
+            ASK_TAGS: [
+                CallbackQueryHandler(handle_tag_selection, pattern="^tags_done$"),
+                CallbackQueryHandler(handle_tag_selection, pattern="^tag_")
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=600,
+    )
+    application.add_handler(add_channel_conv_handler)
 
-@api.get("/health")
-def health_check():
-    """A simple endpoint for keep-alive services to ping."""
-    return {"status": "ok"}
+    # General handlers
+    # NOTE: Your `start_cmd` was not decorated in the webhook version, let's ensure it is here.
+    @ensure_user
+    async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Welcome! Use /help for more.")
+        
+    application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("help", help_command))
+
+    # 3. Start the bot using polling
+    logger.info("[Bot] Starting polling...")
+    application.run_polling()
+
 
 if __name__ == "__main__":
-    uvicorn.run(api, host="0.0.0.0", port=8000)
+    # The entry point is now a simple, direct call to the main function.
+    main()

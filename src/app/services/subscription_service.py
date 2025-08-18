@@ -6,6 +6,8 @@ from app.repo.unit_of_work import UnitOfWork
 from app.domain import models, schemas
 from typing import List
 import datetime
+from app.core.ai.ai_engine import generate_embedding # <-- Import our new function
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +36,14 @@ def add_subscription_for_user(user_id: uuid.UUID, query_text: str, tag_names: Li
         
         else:
             tag = uow.tags.get_or_create_tag(name="others", description="default tag")
-                
+
+        generated_embedding = generate_embedding(query_text)
+
         
         sub_schema = schemas.SubscriptionCreate(
             user_id=user_id,
             query_text=query_text,
+            embedding=generated_embedding
         )
 
         # Use the repository to create the subscription
@@ -133,7 +138,10 @@ def edit_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID, new_query_
             return False
 
         # Step 3: Perform the update
-        uow.subscriptions.update_subscription_query(subscription, new_query_text)
+        generated_embedding = generate_embedding(new_query_text)
+
+        
+        uow.subscriptions.update_subscription_query(subscription, new_query_text, generated_embedding)
         # UoW will commit the changes upon exit.
     
     return True

@@ -11,6 +11,8 @@ from sqlalchemy.sql import func
 from app.config.db import Base
 import enum
 from typing import Optional
+from pgvector.sqlalchemy import Vector # <-- Import the new type
+
 
 # --- Enums for Status Fields ---
 # Using enums makes the status field much more robust and readable.
@@ -136,7 +138,8 @@ class Subscription(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
-    
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
+
     status: Mapped[Status] = mapped_column(SQLAlchemyEnum(Status), default=Status.ACTIVE, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
