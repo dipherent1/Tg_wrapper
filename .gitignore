@@ -215,4 +215,4 @@ session/
 *.session-journal
 
 # alembic.ini
-alembic/versions/
+alembic/versions/__pycache__/
