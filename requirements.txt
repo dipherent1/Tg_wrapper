@@ -73,7 +73,8 @@ telegram_text==0.2.0
 Telethon==1.40.0
 threadpoolctl==3.6.0
 tokenizers==0.15.2
-torch==2.5.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch --no-cache-dir
 torchvision==0.2.0
 tqdm==4.67.1
 transformers==4.35.2
