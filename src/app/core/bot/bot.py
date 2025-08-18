@@ -1,7 +1,6 @@
 # src/app/core/bot.py
 
 import logging
-from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
 from logging.handlers import RotatingFileHandler
