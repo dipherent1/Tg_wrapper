@@ -12,6 +12,7 @@ from app.core.listener.telethon_client import get_telethon_client, ACTIVE_CLIENT
 from app.core.listener.event_handler import setup_event_handlers
 from app.core.listener.background_tasks import process_join_requests_task # <-- Renamed for clarity
 from app.routers.routers import get_routers
+from app.core.ai.ai_engine import get_embedding_model # <-- Import our embedding model
 
 setup_logging_directory()  # Ensure logging directory exists
 setup_sessions_directory()  # Ensure sessions directory exists
@@ -50,6 +51,8 @@ else:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("--- Starting application lifespan ---")
+    # generating embeding model
+    get_embedding_model()
     
     # We only need one client instance for both listening and joining
     main_session_name = settings.DEFAULT_SESSION_NAME
@@ -57,6 +60,8 @@ async def lifespan(app: FastAPI):
     
     logger.info(f"Connecting main client for '{main_session_name}'...")
     await client.start()
+
+
     
     # 1. Setup the new message listener
     setup_event_handlers(client)

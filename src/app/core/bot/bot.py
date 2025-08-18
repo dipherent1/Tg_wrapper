@@ -23,6 +23,9 @@ import sentry_sdk
 
 from app.config.config import settings, setup_logging_directory, setup_sessions_directory
 from app.services.join_request_service import create_join_request
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, Response
+import uvicorn
 
 setup_logging_directory()  # Ensure logging directory exists
 setup_sessions_directory()  # Ensure sessions directory exists
@@ -249,6 +252,7 @@ async def handle_query_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_id=db_user_id,
             query_text=query_text,
             tag_names=tag_names
+
         )
 
         await update.message.reply_text(
@@ -421,15 +425,26 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ... (all your imports and handler functions are correct) ...
 
 
-# --- Main Bot Setup (Synchronous and Simple) ---
+# In src/app/core/bot.py
+
+# --- NEW: Import FastAPI and related items at the top of the file ---
+
+
+# --- KEEP ALL YOUR EXISTING IMPORTS for telegram.ext, services, etc. ---
+# --- KEEP ALL YOUR EXISTING LOGGER/SENTRY/DIRECTORY SETUP ---
+# --- KEEP ALL YOUR EXISTING HANDLER FUNCTIONS (start_cmd, add_channel_start, etc.) ---
+# --- KEEP ALL YOUR EXISTING STATE DEFINITIONS (ASK_CHANNEL, ASK_TAGS, etc.) ---
+
+
 def main() -> None:
-    """Sets up and runs the bot with all handlers."""
+    """Sets up and runs the bot with all handlers using polling."""
     
     # 1. Create the Application object
     application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
 
-    # 2. Add all your handlers
-
+    # 2. Add all your existing handlers to the application object
+    # (This logic is moved from the global scope into the main function)
+    
     # Subscription Conversation Handler
     subscribe_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("subscribe", subscribe_start)],
@@ -437,26 +452,22 @@ def main() -> None:
             ASK_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_query_input)],
         },
         fallbacks=[CommandHandler("cancel", subscribe_cancel)],
-        # It's good practice to allow conversations to time out
-        conversation_timeout=600, # 10 minutes
+        conversation_timeout=600,
     )
     application.add_handler(subscribe_conv_handler)
+
+    # Standalone handlers for listing and cancelling
     application.add_handler(CommandHandler("mysubscriptions", list_subscriptions))
     application.add_handler(CallbackQueryHandler(handle_cancel_button, pattern="^cancel_sub_"))
-    application.add_handler(CommandHandler("help", help_command))
 
-    
+    # Edit Subscription Conversation Handler
     edit_sub_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(edit_subscription_start, pattern="^edit_sub_")],
         states={
             ASK_NEW_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_query_input)],
         },
         fallbacks=[CommandHandler("cancel", edit_cancel)],
-        # This allows the handler to be triggered by a button from another handler
-        map_to_parent={
-            ConversationHandler.END: -1 # Or another state if you want to go back to the list
-        },
-        conversation_timeout=600,# 10 minutes
+        conversation_timeout=600,
     )
     application.add_handler(edit_sub_conv_handler)
 
@@ -471,24 +482,24 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=600,# 10 minutes
+        conversation_timeout=600,
     )
     application.add_handler(add_channel_conv_handler)
 
-    # Start Command
+    # General handlers
+    # NOTE: Your `start_cmd` was not decorated in the webhook version, let's ensure it is here.
     @ensure_user
     async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Welcome! Use /help or more.")
+        await update.message.reply_text("Welcome! Use /help for more.")
+        
     application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("help", help_command))
 
+    # 3. Start the bot using polling
     logger.info("[Bot] Starting polling...")
-
-    # 3. Run the bot until you press Ctrl-C
-    # This method is blocking and handles the asyncio loop internally for you.
-    # It takes care of initialization, running, and shutdown automatically.
     application.run_polling()
 
 
 if __name__ == "__main__":
-    # No asyncio.run() needed, just call the synchronous main function.
+    # The entry point is now a simple, direct call to the main function.
     main()
