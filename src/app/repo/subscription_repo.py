@@ -92,11 +92,26 @@ class SubscriptionRepo:
         return total_count, items
 
     # In src/app/repo/subscription_repo.py
-    def get_all_active_subscription_embeddings(self) -> list[models.Subscription]:
-        """Fetches all active subscriptions that have an embedding."""
+    
+    def find_similar_subscriptions(self, message_embedding: list[float], threshold: float, limit: int = 10) -> list[models.Subscription]:
+        """
+        Finds subscriptions with embeddings similar to the message embedding
+        using the database's vector search capabilities (pgvector).
+        """
+        if not message_embedding:
+            return []
+
+        # Cosine Distance is what we want. A smaller distance means more similar.
+        # The formula for similarity is 1 - distance.
+        # So, similarity > threshold  <=>  1 - distance > threshold  <=>  distance < 1 - threshold
+        distance_threshold = 1 - threshold
+
         return self.session.execute(
             select(models.Subscription)
             .where(models.Subscription.status == models.Status.ACTIVE)
-            .where(models.Subscription.embedding != None)
-            .options(selectinload(models.Subscription.user))
+            # The <-> operator is from pgvector and calculates cosine distance
+            .where(models.Subscription.embedding.cosine_distance(message_embedding) < distance_threshold)
+            .order_by(models.Subscription.embedding.cosine_distance(message_embedding).asc())
+            .limit(limit)
+            .options(selectinload(models.Subscription.user)) # Eagerly load the user
         ).scalars().all()

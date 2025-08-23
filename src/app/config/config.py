@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # TAGS_FILE_PATH: Path = BASE_DIR / "src/app/config/tags.json"
     LOGS_DIR: Path = BASE_DIR / "logs"
+    GEMINI_API_KEY: str = ""
     class Config:
         # This will automatically look for a .env file
         env_file = ".env"

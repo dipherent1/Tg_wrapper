@@ -37,7 +37,8 @@ def add_subscription_for_user(user_id: uuid.UUID, query_text: str, tag_names: Li
         else:
             tag = uow.tags.get_or_create_tag(name="others", description="default tag")
 
-        generated_embedding = generate_embedding(query_text)
+        generated_embedding = generate_embedding(query_text, task_type="RETRIEVAL_QUERY")
+
 
         
         sub_schema = schemas.SubscriptionCreate(
@@ -138,7 +139,8 @@ def edit_subscription(user_id: uuid.UUID, subscription_id: uuid.UUID, new_query_
             return False
 
         # Step 3: Perform the update
-        generated_embedding = generate_embedding(new_query_text)
+        generated_embedding = generate_embedding(new_query_text, task_type="RETRIEVAL_QUERY")
+
 
         
         uow.subscriptions.update_subscription_query(subscription, new_query_text, generated_embedding)
